@@ -3,81 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GEPT 中級教材生成器 (Pro版)</title>
+    <title>GEPT 教材生成器 (印刷專用版)</title>
     
-    <!-- React Libraries -->
+    <!-- React & Tailwind -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- UI & Icons -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
-    <!-- PDF Logic -->
+    <!-- PDF Parser -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 
-    <!-- Export Libraries -->
+    <!-- Word Export -->
     <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700&family=Noto+Serif+TC:wght@400;700&display=swap');
-        
-        body { font-family: 'Noto Sans TC', sans-serif; background: #f3f4f6; }
-        
-        /* 列印專用樣式 (Export CSS) */
-        .export-container {
-            font-family: 'Noto Serif TC', serif;
-            color: #000;
-            line-height: 1.6;
-            background: white;
-            width: 210mm; /* A4 Width */
-            margin: 0 auto;
-        }
-        
-        .print-page {
-            position: relative;
-            width: 210mm;
-            min-height: 297mm; /* A4 Height */
-            padding: 20mm;
-            box-sizing: border-box;
-            page-break-after: always;
-            background: white;
-            overflow: hidden; /* 防止內容溢出 */
-        }
-        
-        .print-page:last-child { page-break-after: auto; }
-
-        /* 標題與表格樣式 */
-        .unit-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
-        .unit-title { font-size: 24pt; font-weight: bold; color: #b45309; }
-        .section-header { background-color: #eee; border-left: 5px solid #333; padding: 5px 10px; font-weight: bold; font-size: 14pt; margin: 20px 0; }
-        
-        /* 避免表格跨頁斷裂 */
-        table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
-        tr { page-break-inside: avoid; page-break-after: auto; }
-        td, th { border: 1px solid #000; padding: 8px; vertical-align: top; font-size: 10pt; }
-        th { background-color: #333; color: white; }
-
-        .story-text { font-size: 12pt; text-align: justify; margin-bottom: 20px; }
-        .story-trans { font-size: 11pt; color: #444; border-top: 1px dashed #ccc; padding-top: 10px; }
-        
-        .quiz-item { margin-bottom: 15px; }
-
-        /* Loader */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background: #eef2f6; }
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #b45309; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        /* 隱藏區塊：用於 PDF 生成時不顯示於畫面上 */
-        #hidden-export-area {
-            position: absolute;
-            left: -9999px;
-            top: 0;
-            width: 210mm;
-        }
     </style>
 </head>
 <body>
@@ -85,12 +32,185 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-        const DEFAULT_MODEL = "mistralai/devstral-2512:free";
+        const DEFAULT_MODEL = "mistralai/devstral-2512:free"; // 或 mistralai/mistral-7b-instruct:free
         const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
+        // ==========================================
+        // 核心：HTML 印刷模板生成器
+        // ==========================================
+        const generatePrintableHtml = (contentData, title = "GEPT Textbook") => {
+            const dateStr = new Date().toLocaleDateString();
+            
+            // CSS: 專門針對列印 (Print) 與 Word 優化
+            const css = `
+                @page { size: A4; margin: 20mm; }
+                body { font-family: "Times New Roman", "PMingLiU", serif; color: #000; line-height: 1.5; margin: 0; padding: 0; }
+                
+                /* Layout Utilities */
+                .page { page-break-after: always; position: relative; min-height: 90vh; }
+                .no-break { page-break-inside: avoid; }
+                .center-xy { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; height: 900px; }
+                
+                /* Typography */
+                h1 { font-size: 36pt; color: #78350f; margin-bottom: 20px; font-weight: bold; }
+                h2 { font-size: 24pt; color: #92400e; margin-bottom: 15px; font-weight: bold; }
+                h3 { font-size: 18pt; color: #b45309; margin-bottom: 10px; font-weight: bold; }
+                
+                /* Components */
+                .unit-header { text-align: center; border-bottom: 3px solid #b45309; padding-bottom: 10px; margin-bottom: 30px; }
+                .section-header { 
+                    background-color: #f3f4f6; 
+                    border-left: 6px solid #b45309; 
+                    padding: 8px 15px; 
+                    font-weight: bold; 
+                    font-size: 14pt; 
+                    margin: 30px 0 15px 0; 
+                    color: #333;
+                }
+                
+                /* Tables */
+                table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11pt; }
+                th { background-color: #78350f; color: white; padding: 10px; border: 1px solid #000; text-align: left; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                td { border: 1px solid #ccc; padding: 10px; vertical-align: top; }
+                tr:nth-child(even) { background-color: #fafafa; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+                /* Story & Grammar */
+                .story-text { font-size: 12pt; text-align: justify; line-height: 1.8; margin-bottom: 20px; }
+                .story-trans { font-size: 11pt; color: #555; border-top: 1px dashed #ccc; padding-top: 15px; margin-top: 15px; }
+                .grammar-box { background: #fffbeb; border: 2px solid #fcd34d; padding: 20px; border-radius: 8px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                
+                /* Quiz */
+                .quiz-item { margin-bottom: 15px; page-break-inside: avoid; }
+                .quiz-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 5px; margin-left: 20px; font-size: 10pt; }
+
+                /* Footer */
+                .footer-hint { text-align: center; color: #999; font-style: italic; font-size: 10pt; margin-top: 50px; }
+                
+                /* Answers */
+                .answer-key-row { margin-bottom: 15px; border-bottom: 1px dashed #ddd; padding-bottom: 5px; page-break-inside: avoid; }
+                .answer-item { margin-right: 15px; }
+                .ans-val { color: #dc2626; font-weight: bold; }
+
+                /* Print Instruction Header (Only shows on screen) */
+                @media print { .no-print { display: none; } }
+                .no-print { background: #fef3c7; border-bottom: 1px solid #d97706; padding: 10px; text-align: center; font-family: sans-serif; color: #92400e; }
+            `;
+
+            let html = `
+                <!DOCTYPE html>
+                <html lang="zh-TW">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>${title}</title>
+                    <style>${css}</style>
+                </head>
+                <body>
+                    <div class="no-print">
+                        ⚠️ <strong>列印說明：</strong> 請按 <code>Ctrl + P</code> (或 Command + P)，目的地選擇「另存為 PDF」。<br>
+                        確認「背景圖形」選項已勾選，以保留表格顏色。
+                    </div>
+            `;
+
+            // Cover Page
+            html += `
+                <div class="page center-xy">
+                    <h1>GEPT 中級</h1>
+                    <h2>主題式單字教材</h2>
+                    <div style="margin-top: 50px; font-size: 14pt; color: #555;">
+                        <p>Total Units: ${contentData.length}</p>
+                        <p>Generated: ${dateStr}</p>
+                    </div>
+                </div>
+            `;
+
+            // Units
+            contentData.forEach(unit => {
+                // Page 1: Story
+                html += `
+                    <div class="page">
+                        <div class="unit-header"><h2>Unit ${unit.unitId}: ${unit.theme}</h2></div>
+                        <div class="section-header">Reading Passage 課文朗讀</div>
+                        <div class="story-text">${unit.story.english.replace(/\n/g, '<br>')}</div>
+                        <div class="story-trans"><strong>中文翻譯：</strong><br>${unit.story.chinese.replace(/\n/g, '<br>')}</div>
+                        <div class="footer-hint">-- Vocabulary on next page --</div>
+                    </div>
+                `;
+
+                // Page 2: Vocab
+                const rows = unit.vocab_list.map(v => `
+                    <tr>
+                        <td style="font-weight:bold; color:#78350f;">${v.word}</td>
+                        <td style="font-style:italic;">${v.pos}</td>
+                        <td>${v.meaning}</td>
+                        <td>
+                            <div>${v.example}</div>
+                            <div style="color:#666; font-size:0.9em; margin-top:4px;">${v.example_cn}</div>
+                        </td>
+                    </tr>
+                `).join('');
+
+                html += `
+                    <div class="page">
+                        <div class="unit-header"><h3>Unit ${unit.unitId} Vocabulary</h3></div>
+                        <table>
+                            <thead><tr><th width="15%">Word</th><th width="10%">Pos.</th><th width="25%">Meaning</th><th width="50%">Example</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                `;
+
+                // Page 3: Practice
+                const quizHtml = unit.quiz.map((q, i) => {
+                    let opts = '';
+                    if (q.type === 'multiple_choice' && q.options) {
+                        opts = `<div class="quiz-options">${q.options.map(o => `<div>${o}</div>`).join('')}</div>`;
+                    }
+                    return `<div class="quiz-item"><strong>${i+1}.</strong> ${q.question}${opts}</div>`;
+                }).join('');
+
+                const grammarEx = unit.grammar.examples.map(e => `<li>${e}</li>`).join('');
+
+                html += `
+                    <div class="page">
+                        <div class="unit-header"><h3>Unit ${unit.unitId} Practice</h3></div>
+                        
+                        <div class="section-header">Grammar Focus 文法重點</div>
+                        <div class="grammar-box">
+                            <h4 style="margin-top:0; color:#b45309; font-size:1.2em; font-weight:bold;">${unit.grammar.title}</h4>
+                            <p>${unit.grammar.explanation}</p>
+                            <ul>${grammarEx}</ul>
+                        </div>
+
+                        <div class="section-header">Quiz 自我測驗</div>
+                        <div style="padding-left:10px;">
+                            <p style="color:#666; font-style:italic; margin-bottom:10px;">(請將答案寫在紙上，解答附於書末)</p>
+                            ${quizHtml}
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Answer Key
+            const answers = contentData.map(unit => `
+                <div class="answer-key-row">
+                    <strong style="color:#b45309;">Unit ${unit.unitId}:</strong>
+                    ${unit.quiz.map((q, i) => `<span class="answer-item">${i+1}. <span class="ans-val">${q.answer}</span></span>`).join('')}
+                </div>
+            `).join('');
+
+            html += `
+                <div class="page">
+                    <div class="unit-header"><h2 style="color:#dc2626;">Answer Key 解答篇</h2></div>
+                    <div style="column-count:1;">${answers}</div>
+                </div>
+                </body></html>
+            `;
+
+            return html;
+        };
+
         const App = () => {
-            // State
-            const [view, setView] = useState('home'); // home, processing, preview, history
+            const [view, setView] = useState('home');
             const [apiKey, setApiKey] = useState(localStorage.getItem('gept_api_key') || "");
             const [logs, setLogs] = useState([]);
             const [records, setRecords] = useState([]);
@@ -98,511 +218,293 @@
             // Processing State
             const [parsedWords, setParsedWords] = useState([]);
             const [units, setUnits] = useState([]);
-            const [generatedContent, setGeneratedContent] = useState([]); // Array of unit contents
+            const [generatedContent, setGeneratedContent] = useState([]); 
             const [progress, setProgress] = useState({ current: 0, total: 0 });
-            const [isGenerating, setIsGenerating] = useState(false);
 
-            // Ref for HTML to Image/PDF
-            const exportRef = useRef();
+            const fileInputRef = useRef(null);
+            const importInputRef = useRef(null);
 
             useEffect(() => {
-                // Load history
+                // 讀取舊紀錄 (相容性保證)
                 const saved = localStorage.getItem('gept_records');
                 if (saved) {
-                    try {
-                        setRecords(JSON.parse(saved));
-                    } catch(e) { console.error("History load error", e); }
+                    try { setRecords(JSON.parse(saved)); } catch(e) {}
                 }
             }, []);
 
             const addLog = (msg) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
 
-            // --- 1. PDF Parsing ---
-            const handleFileUpload = async (e) => {
+            // --- Logic: PDF Parsing ---
+            const handlePdfUpload = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-
-                addLog("正在讀取 PDF...");
-                const reader = new FileReader();
-                reader.onload = async function() {
-                    try {
-                        const typedarray = new Uint8Array(this.result);
-                        const pdf = await pdfjsLib.getDocument(typedarray).promise;
-                        let foundWords = [];
-
-                        for (let i = 1; i <= pdf.numPages; i++) {
-                            const page = await pdf.getPage(i);
-                            const textContent = await page.getTextContent();
-                            const items = textContent.items.map(item => item.str);
-                            
-                            // 解析邏輯：尋找 "中級" 標籤並回推單字
-                            items.forEach((text, idx) => {
-                                if (text.includes("中級")) {
-                                    // 往回找 1-8 格內的純英文字
-                                    for (let back = 1; back <= 8; back++) {
-                                        const candidate = items[idx - back];
-                                        if (candidate && /^[a-zA-Z\-\s]+$/.test(candidate.trim()) && candidate.length > 2) {
-                                            if (!['verb', 'noun', 'adj', 'adv'].includes(candidate.toLowerCase())) {
-                                                foundWords.push({ word: candidate.trim() });
-                                                break;
-                                            }
-                                        }
+                addLog("讀取 PDF...");
+                
+                try {
+                    const buffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument(new Uint8Array(buffer)).promise;
+                    let words = [];
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const text = await page.getTextContent();
+                        const items = text.items.map(t => t.str);
+                        items.forEach((txt, idx) => {
+                            if (txt.includes("中級")) {
+                                for (let j=1; j<=8; j++) {
+                                    const w = items[idx-j];
+                                    if (w && /^[a-zA-Z\-\s]{2,}$/.test(w.trim()) && !['verb','noun'].includes(w.toLowerCase())) {
+                                        words.push({word: w.trim()});
+                                        break;
                                     }
                                 }
-                            });
-                        }
-
-                        // 去除重複
-                        const uniqueWords = [...new Map(foundWords.map(w => [w.word, w])).values()];
-                        setParsedWords(uniqueWords);
-                        addLog(`解析完成！共 ${uniqueWords.length} 個中級單字。`);
-
-                        // 分組 (每 20 字一組)
-                        const chunkSize = 20;
-                        const newUnits = [];
-                        for (let i = 0; i < uniqueWords.length; i += chunkSize) {
-                            newUnits.push({
-                                id: Math.floor(i / chunkSize) + 1,
-                                words: uniqueWords.slice(i, i + chunkSize)
-                            });
-                        }
-                        setUnits(newUnits);
-                        
-                    } catch (err) {
-                        addLog("PDF 錯誤: " + err.message);
-                        alert("PDF 解析失敗");
+                            }
+                        });
                     }
-                };
-                reader.readAsArrayBuffer(file);
+                    words = [...new Map(words.map(w => [w.word, w])).values()];
+                    
+                    const chunkSize = 20;
+                    const newUnits = [];
+                    for (let i=0; i<words.length; i+=chunkSize) {
+                        newUnits.push({ id: Math.floor(i/chunkSize)+1, words: words.slice(i, i+chunkSize) });
+                    }
+                    setParsedWords(words);
+                    setUnits(newUnits);
+                    addLog(`解析成功：${words.length} 單字 / ${newUnits.length} 單元`);
+                } catch(e) {
+                    addLog("PDF 解析失敗: " + e.message);
+                }
             };
 
-            // --- 2. AI Generation ---
-            const startGeneration = async () => {
+            // --- Logic: Generation ---
+            const startGen = async () => {
                 if (!apiKey) return alert("請輸入 API Key");
                 localStorage.setItem('gept_api_key', apiKey);
-                
-                setIsGenerating(true);
                 setView('processing');
                 setGeneratedContent([]);
                 setProgress({ current: 0, total: units.length });
-                
-                // 開始序列處理
-                processUnit(0, []);
+                await processBatch(0, []);
             };
 
-            const processUnit = async (index, currentResults) => {
+            const processBatch = async (index, currentList) => {
                 if (index >= units.length) {
-                    finishGeneration(currentResults);
+                    saveToHistory(currentList, true);
+                    setGeneratedContent(currentList);
+                    setView('preview');
                     return;
                 }
-
                 const unit = units[index];
-                setProgress({ current: index + 1, total: units.length });
-                addLog(`正在生成 Unit ${unit.id}...`);
+                setProgress({current: index+1, total: units.length});
+                addLog(`生成 Unit ${unit.id}...`);
 
-                const wordList = unit.words.map(w => w.word).join(", ");
-                
-                // Prompt
                 const prompt = `
-                Create a GEPT Intermediate textbook unit (JSON).
-                Theme: Pick a theme for these words: ${wordList}
-                Structure:
-                1. "theme": string
-                2. "story": { "english": "150 words story using ALL words", "chinese": "Traditional Chinese translation" }
-                3. "vocab_list": array of { "word", "pos", "meaning", "example", "example_cn" } (for ALL words)
-                4. "grammar": { "title": string, "explanation": "Chinese explanation", "examples": string[] }
-                5. "quiz": array of 6 items (3 fill_in_blank, 3 multiple_choice). structure: { "type", "question", "options": [], "answer" }
-
-                Output ONLY valid JSON.
+                    Generate GEPT Intermediate Unit (JSON). Words: ${unit.words.map(w=>w.word).join(', ')}.
+                    Structure:
+                    {
+                        "theme": "Theme Name",
+                        "story": { "english": "150 word story", "chinese": "TC Translation" },
+                        "vocab_list": [ { "word": "word", "pos": "n.", "meaning": "TC", "example": "Sent", "example_cn": "Trans" }... ],
+                        "grammar": { "title": "Grammar Point", "explanation": "TC", "examples": ["ex1"] },
+                        "quiz": [ { "type": "fill_in_blank", "question": "...", "answer": "..." }, { "type": "multiple_choice", "question": "...", "options": ["A","B"], "answer": "A" } ]
+                    }
                 `;
 
                 try {
                     const res = await fetch(OPENROUTER_URL, {
                         method: "POST",
-                        headers: { 
-                            "Authorization": `Bearer ${apiKey}`, 
-                            "Content-Type": "application/json",
-                            "HTTP-Referer": window.location.href 
-                        },
+                        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
                         body: JSON.stringify({
-                            "model": DEFAULT_MODEL,
-                            "messages": [
-                                { "role": "system", "content": "You are a JSON generator." },
-                                { "role": "user", "content": prompt }
-                            ],
-                            "response_format": { "type": "json_object" }
+                            model: DEFAULT_MODEL,
+                            messages: [{role:"user", content: prompt}],
+                            response_format: { type: "json_object" }
                         })
                     });
+                    const json = await res.json();
+                    const content = JSON.parse(json.choices[0].message.content.replace(/```json|```/g, ""));
+                    const updatedList = [...currentList, { ...content, unitId: unit.id }];
                     
-                    const data = await res.json();
-                    let contentStr = data.choices[0].message.content.replace(/```json/g, "").replace(/```/g, "");
-                    const json = JSON.parse(contentStr);
-                    
-                    const newResult = [...currentResults, { ...json, unitId: unit.id }];
-                    setGeneratedContent(newResult);
-                    
-                    // 自動存檔 (避免瀏覽器崩潰丟失)
-                    saveToHistory(newResult, false);
-
-                    setTimeout(() => processUnit(index + 1, newResult), 1000); // 1秒間隔
-
-                } catch (e) {
-                    addLog(`Unit ${unit.id} 錯誤: ${e.message}`);
-                    // 錯誤也繼續，避免全停
-                    setTimeout(() => processUnit(index + 1, currentResults), 1000);
+                    if (index % 1 === 0) saveToHistory(updatedList, false);
+                    setTimeout(() => processBatch(index+1, updatedList), 1000);
+                } catch(e) {
+                    addLog(`Error Unit ${unit.id}: ${e.message}`);
+                    setTimeout(() => processBatch(index+1, currentList), 1000);
                 }
             };
 
-            const finishGeneration = (finalContent) => {
-                setIsGenerating(false);
-                saveToHistory(finalContent, true);
-                setView('preview');
-                addLog("所有單元生成完畢！");
-            };
-
-            // --- 3. History & Saving ---
+            // --- Logic: Data Mgmt ---
             const saveToHistory = (content, isFinal) => {
-                const newRecord = {
-                    id: Date.now(),
-                    date: new Date().toLocaleString(),
-                    title: `教材生成 (${content.length} 單元)`,
-                    content: content
-                };
-                
-                // 更新 Records
+                const title = `教材 (${content.length}單元) - ${new Date().toLocaleDateString()}`;
                 setRecords(prev => {
-                    // 如果這是一個正在進行的任務的更新，我們可以替換掉最新的那筆（如果是同一次session），
-                    // 但為了簡單起見，我們只在 isFinal 時存入永久紀錄，或者在這裡做一個簡單的覆蓋
-                    if (isFinal) {
-                        const updated = [newRecord, ...prev].slice(0, 10); // 只留最近10筆
-                        localStorage.setItem('gept_records', JSON.stringify(updated));
-                        return updated;
+                    const exists = prev.find(r => r.isTemp);
+                    let newRecs;
+                    if (exists && !isFinal) newRecs = prev.map(r => r.isTemp ? { ...r, content, date: new Date().toLocaleString() } : r);
+                    else {
+                        if (exists) newRecs = prev.map(r => r.isTemp ? { ...r, content, title, isTemp: false } : r);
+                        else newRecs = [{ id: Date.now(), title, date: new Date().toLocaleString(), content, isTemp: !isFinal }, ...prev];
                     }
-                    return prev;
+                    localStorage.setItem('gept_records', JSON.stringify(newRecs));
+                    return newRecs;
                 });
             };
 
-            const loadRecord = (record) => {
-                setGeneratedContent(record.content);
-                setView('preview');
+            // --- Logic: Export (Download Fix) ---
+            const handleDownload = (type, record = null) => {
+                const dataToExport = record ? record.content : generatedContent;
+                if (!dataToExport || dataToExport.length === 0) return alert("無內容");
+
+                const htmlString = generatePrintableHtml(dataToExport, record ? record.title : "GEPT Textbook");
+
+                if (type === 'html') {
+                    // HTML 下載 (推薦)
+                    const blob = new Blob([htmlString], { type: "text/html;charset=utf-8" });
+                    saveAs(blob, "GEPT_Printable.html");
+                } else if (type === 'docx') {
+                    // Word 下載
+                    const blob = htmlDocx.asBlob(htmlString, { orientation: 'portrait', margins: { top: 720 } });
+                    saveAs(blob, "GEPT_Textbook.docx");
+                } else if (type === 'json') {
+                    // JSON 備份
+                    const blob = new Blob([JSON.stringify(record || {content: generatedContent})], { type: "application/json" });
+                    saveAs(blob, "GEPT_Backup.json");
+                }
             };
 
-            const deleteRecord = (id) => {
-                const updated = records.filter(r => r.id !== id);
-                setRecords(updated);
-                localStorage.setItem('gept_records', JSON.stringify(updated));
-            };
-
-            // --- 4. Export Functions (The Fix) ---
-            
-            // 下載 PDF
-            const downloadPDF = () => {
-                // 使用隱藏的 exportRef 區域進行渲染
-                const element = document.getElementById('hidden-export-area');
-                if (!element) return alert("渲染區域未準備好");
-
-                const opt = {
-                    margin: 0,
-                    filename: `GEPT_Textbook_${new Date().toISOString().slice(0,10)}.pdf`,
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2, useCORS: true },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            const importJson = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const data = JSON.parse(ev.target.result);
+                        const content = data.content || data; // handle structure variance
+                        if (!Array.isArray(content)) throw new Error();
+                        const newRec = { id: Date.now(), title: "匯入的備份", date: new Date().toLocaleString(), content, isTemp: false };
+                        setRecords(prev => [newRec, ...prev]);
+                        localStorage.setItem('gept_records', JSON.stringify([newRec, ...records]));
+                        alert("匯入成功！");
+                    } catch(err) { alert("JSON 格式錯誤"); }
                 };
-
-                addLog("正在生成 PDF (請稍候)...");
-                html2pdf().set(opt).from(element).save().then(() => {
-                    addLog("PDF 下載完成");
-                });
+                reader.readAsText(file);
             };
 
-            // 下載 Word
-            const downloadDocx = () => {
-                const element = document.getElementById('hidden-export-area');
-                
-                // 構建包含完整樣式的 HTML 字串
-                const htmlString = `
-                    <!DOCTYPE html>
-                    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'>
-                    <head>
-                        <meta charset="utf-8">
-                        <title>GEPT Textbook</title>
-                        <style>
-                            body { font-family: 'Times New Roman', serif; }
-                            table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-                            td, th { border: 1px solid #000; padding: 5px; }
-                            h1, h2, h3 { color: #b45309; }
-                            .page-break { page-break-after: always; }
-                        </style>
-                    </head>
-                    <body>
-                        ${element.innerHTML}
-                    </body>
-                    </html>
-                `;
-
-                const blob = htmlDocx.asBlob(htmlString, {
-                    orientation: 'portrait',
-                    margins: { top: 720, bottom: 720, left: 720, right: 720 }
-                });
-                saveAs(blob, `GEPT_Textbook_${new Date().toISOString().slice(0,10)}.docx`);
-                addLog("Word 下載完成");
-            };
-
-            // --- UI Components ---
-            
-            // 渲染：教材內容 (用於預覽和匯出)
-            const TextbookContent = ({ data }) => (
-                <div className="export-container">
-                    {/* Cover */}
-                    <div className="print-page flex flex-col justify-center items-center text-center">
-                        <h1 className="text-6xl font-bold mb-4 text-amber-900">GEPT 中級</h1>
-                        <h2 className="text-4xl font-bold mb-10 text-amber-700">主題式單字教材</h2>
-                        <div className="mt-20 text-gray-500">
-                            Generated by AI Generator<br/>
-                            {new Date().toLocaleDateString()}
-                        </div>
-                    </div>
-
-                    {data.map((unit, i) => (
-                        <React.Fragment key={i}>
-                            {/* Page 1: Story */}
-                            <div className="print-page">
-                                <div className="unit-header">
-                                    <div className="unit-title">Unit {unit.unitId}: {unit.theme}</div>
-                                </div>
-                                <div className="section-header">課文閱讀 Reading</div>
-                                <div className="story-text">{unit.story.english}</div>
-                                <div className="story-trans">
-                                    <strong>中文翻譯：</strong><br/>
-                                    {unit.story.chinese}
-                                </div>
-                                <div className="absolute bottom-10 left-0 w-full text-center text-gray-400 italic">
-                                    -- 單字與練習請翻頁 --
-                                </div>
-                            </div>
-
-                            {/* Page 2: Vocab */}
-                            <div className="print-page">
-                                <div className="unit-header"><div className="text-xl font-bold">Unit {unit.unitId} Vocabulary</div></div>
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th width="20%">單字</th>
-                                            <th width="10%">詞性</th>
-                                            <th width="20%">意思</th>
-                                            <th width="50%">例句</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {unit.vocab_list.map((v, idx) => (
-                                            <tr key={idx}>
-                                                <td className="font-bold text-amber-800">{v.word}</td>
-                                                <td className="italic text-gray-600">{v.pos}</td>
-                                                <td>{v.meaning}</td>
-                                                <td>
-                                                    <div>{v.example}</div>
-                                                    <div className="text-gray-500 text-sm">{v.example_cn}</div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            {/* Page 3: Grammar & Quiz */}
-                            <div className="print-page">
-                                <div className="unit-header"><div className="text-xl font-bold">Unit {unit.unitId} Practice</div></div>
-                                
-                                <div className="section-header">文法 Grammar: {unit.grammar.title}</div>
-                                <div className="bg-gray-100 p-4 rounded mb-6 border-l-4 border-amber-500">
-                                    <p className="mb-2">{unit.grammar.explanation}</p>
-                                    <ul className="list-disc pl-5">
-                                        {unit.grammar.examples.map((ex, exi) => <li key={exi}>{ex}</li>)}
-                                    </ul>
-                                </div>
-
-                                <div className="section-header">測驗 Quiz</div>
-                                <div className="pl-2">
-                                    {unit.quiz.map((q, qi) => (
-                                        <div key={qi} className="quiz-item">
-                                            <div className="font-bold">{qi+1}. {q.question}</div>
-                                            {q.type === 'multiple_choice' && (
-                                                <div className="ml-4 grid grid-cols-2 text-sm mt-1">
-                                                    {q.options.map((opt, oi) => <div key={oi}>{opt}</div>)}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </React.Fragment>
-                    ))}
-
-                    {/* Answer Key */}
-                    <div className="print-page">
-                        <div className="unit-header"><div className="unit-title text-red-700">解答篇 Answer Key</div></div>
-                        <div style={{columnCount: 2, gap: '20px'}}>
-                            {data.map((unit, i) => (
-                                <div key={i} className="mb-4 break-inside-avoid border p-2 rounded">
-                                    <h4 className="font-bold border-b mb-2">Unit {unit.unitId}</h4>
-                                    <ol className="list-decimal pl-5 text-sm">
-                                        {unit.quiz.map((q, qi) => (
-                                            <li key={qi}>
-                                                <span className="text-red-600 font-bold">{q.answer}</span>
-                                            </li>
-                                        ))}
-                                    </ol>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-
+            // --- Views ---
             return (
-                <div className="min-h-screen flex flex-col">
-                    {/* Header */}
+                <div className="min-h-screen pb-10">
                     <nav className="bg-amber-800 text-white p-4 shadow sticky top-0 z-50">
                         <div className="max-w-6xl mx-auto flex justify-between items-center">
-                            <h1 className="text-xl font-bold flex items-center gap-2">
-                                <i className="fas fa-book-open"></i> GEPT 教材生成器 Pro
-                            </h1>
+                            <h1 className="font-bold text-xl"><i className="fas fa-print mr-2"></i>GEPT 教材生成器 (V4)</h1>
                             <div className="flex gap-4">
-                                <button onClick={() => setView('home')} className={`hover:text-amber-200 ${view==='home'?'underline':''}`}>首頁</button>
-                                <button onClick={() => setView('history')} className={`hover:text-amber-200 ${view==='history'?'underline':''}`}>歷史紀錄</button>
+                                <button onClick={()=>setView('home')} className={view==='home'?'text-yellow-300 font-bold':''}>首頁</button>
+                                <button onClick={()=>setView('history')} className={view==='history'?'text-yellow-300 font-bold':''}>歷史紀錄</button>
                             </div>
                         </div>
                     </nav>
 
-                    {/* Main Content */}
-                    <main className="flex-grow p-4 max-w-6xl mx-auto w-full">
-                        
-                        {/* VIEW: HOME */}
+                    <main className="max-w-4xl mx-auto p-4 mt-6">
                         {view === 'home' && (
-                            <div className="bg-white p-8 rounded-lg shadow-lg mt-6">
-                                <div className="mb-6">
-                                    <label className="block font-bold mb-2">1. API Key (OpenRouter)</label>
-                                    <input 
-                                        type="password" 
-                                        value={apiKey} 
-                                        onChange={(e) => setApiKey(e.target.value)}
-                                        className="w-full border p-2 rounded"
-                                        placeholder="sk-or-..." 
-                                    />
-                                </div>
-                                
-                                <div className="mb-6">
-                                    <label className="block font-bold mb-2">2. 上傳 PDF (GEPT 單字表)</label>
-                                    <div className="border-2 border-dashed p-8 text-center rounded bg-gray-50 cursor-pointer hover:bg-gray-100 relative">
-                                        <input type="file" accept=".pdf" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
-                                        <i className="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-2"></i>
-                                        <p>點擊上傳 PDF 檔案</p>
+                            <div className="bg-white p-8 rounded shadow-lg">
+                                <h2 className="text-2xl font-bold mb-6 text-amber-900 border-b pb-2">Step 1. 上傳與設定</h2>
+                                <input className="w-full border p-2 rounded mb-4" type="password" placeholder="OpenRouter API Key" value={apiKey} onChange={e=>setApiKey(e.target.value)} />
+                                <div className="border-2 border-dashed border-gray-300 p-8 text-center rounded bg-gray-50 hover:bg-gray-100 cursor-pointer relative">
+                                    <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept=".pdf" onChange={handlePdfUpload} />
+                                    <div className="text-gray-500">
+                                        <i className="fas fa-file-pdf text-4xl mb-2"></i>
+                                        <p>上傳 PDF 單字表</p>
                                     </div>
                                 </div>
-
                                 {units.length > 0 && (
-                                    <div className="bg-green-50 border border-green-200 p-4 rounded mb-6">
-                                        <p className="font-bold text-green-800"><i className="fas fa-check-circle"></i> 解析成功</p>
-                                        <p>共 {parsedWords.length} 個單字，將分為 {units.length} 個單元。</p>
-                                        <button 
-                                            onClick={startGeneration}
-                                            className="mt-4 w-full bg-amber-600 text-white py-3 rounded font-bold hover:bg-amber-700 shadow"
-                                        >
-                                            開始生成完整教材 (預計需時 {Math.ceil(units.length * 0.5)} 分鐘)
+                                    <div className="mt-6">
+                                        <div className="bg-green-100 text-green-800 p-3 rounded mb-4">
+                                            <i className="fas fa-check mr-2"></i>解析完成：{parsedWords.length} 單字 / {units.length} 單元
+                                        </div>
+                                        <button onClick={startGen} className="w-full bg-amber-600 hover:bg-amber-700 text-white py-3 rounded font-bold shadow">
+                                            開始生成教材
                                         </button>
                                     </div>
                                 )}
                             </div>
                         )}
 
-                        {/* VIEW: PROCESSING */}
                         {view === 'processing' && (
-                            <div className="bg-white p-8 rounded-lg shadow-lg mt-6 text-center">
+                            <div className="bg-white p-8 rounded shadow-lg text-center">
                                 <div className="loader mx-auto mb-4"></div>
-                                <h2 className="text-2xl font-bold mb-2">AI 正在撰寫教材...</h2>
-                                <p className="text-gray-600 mb-4">請勿關閉視窗，系統會自動存檔。</p>
-                                
-                                <div className="w-full bg-gray-200 rounded-full h-4 mb-2 overflow-hidden">
-                                    <div 
-                                        className="bg-amber-600 h-full transition-all duration-500" 
-                                        style={{width: `${(progress.current / progress.total) * 100}%`}}
-                                    ></div>
+                                <h2 className="text-xl font-bold">AI 正在撰寫教材...</h2>
+                                <p className="mb-4 text-gray-500">Unit {progress.current} / {progress.total}</p>
+                                <div className="w-full bg-gray-200 h-4 rounded-full overflow-hidden mb-6">
+                                    <div className="bg-amber-600 h-full transition-all duration-500" style={{width: `${(progress.current/progress.total)*100}%`}}></div>
                                 </div>
-                                <p className="mb-6">進度: {progress.current} / {progress.total} 單元</p>
-                                
-                                <div className="h-48 overflow-y-auto bg-black text-green-400 text-left p-4 rounded font-mono text-sm">
-                                    {logs.map((log, i) => <div key={i}>{log}</div>)}
+                                <div className="h-40 overflow-y-auto bg-black text-green-400 text-left text-xs p-3 rounded font-mono">
+                                    {logs.map((l,i)=><div key={i}>{l}</div>)}
                                 </div>
                             </div>
                         )}
 
-                        {/* VIEW: PREVIEW */}
-                        {view === 'preview' && (
-                            <div className="flex flex-col h-full">
-                                <div className="bg-white p-4 rounded shadow mb-4 flex justify-between items-center sticky top-0 z-10">
-                                    <h2 className="text-xl font-bold">預覽教材</h2>
-                                    <div className="flex gap-2">
-                                        <button onClick={downloadDocx} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                                            <i className="fas fa-file-word mr-1"></i> 下載 Word
-                                        </button>
-                                        <button onClick={downloadPDF} className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
-                                            <i className="fas fa-file-pdf mr-1"></i> 下載 PDF
-                                        </button>
+                        {(view === 'preview' || view === 'history') && (
+                            <div className="space-y-6">
+                                {view === 'preview' && (
+                                    <div className="bg-white p-6 rounded shadow border-l-4 border-green-500">
+                                        <h2 className="text-xl font-bold mb-2">生成完畢！</h2>
+                                        <p className="mb-4">請使用下方的按鈕下載檔案。</p>
+                                        <div className="flex gap-3">
+                                            <button onClick={()=>handleDownload('html')} className="flex-1 bg-red-600 text-white py-3 rounded font-bold hover:bg-red-700 shadow">
+                                                <i className="fas fa-file-code mr-2"></i> 下載印刷用 HTML (推薦)
+                                            </button>
+                                            <button onClick={()=>handleDownload('docx')} className="flex-1 bg-blue-600 text-white py-3 rounded font-bold hover:bg-blue-700 shadow">
+                                                <i className="fas fa-file-word mr-2"></i> 下載 Word
+                                            </button>
+                                        </div>
+                                        <p className="text-sm text-gray-500 mt-2 text-center">
+                                            * HTML 下載後請用瀏覽器開啟，按 Ctrl+P 即可存為排版完美的 PDF。
+                                        </p>
                                     </div>
-                                </div>
+                                )}
 
-                                <div className="flex-grow bg-gray-500 p-8 overflow-auto rounded shadow-inner" style={{height: '70vh'}}>
-                                    {/* 這是給使用者看的預覽，與 Export 共用元件 */}
-                                    <div className="transform scale-75 origin-top">
-                                        <TextbookContent data={generatedContent} />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                                {view === 'history' && (
+                                    <div className="bg-white p-6 rounded shadow">
+                                        <div className="flex justify-between items-center mb-6">
+                                            <h2 className="text-2xl font-bold text-gray-800">歷史紀錄</h2>
+                                            <button onClick={()=>importInputRef.current.click()} className="text-sm bg-gray-200 px-3 py-1 rounded hover:bg-gray-300">
+                                                <i className="fas fa-upload mr-1"></i> 匯入 JSON
+                                            </button>
+                                            <input ref={importInputRef} type="file" accept=".json" className="hidden" onChange={importJson} />
+                                        </div>
 
-                        {/* VIEW: HISTORY */}
-                        {view === 'history' && (
-                            <div className="bg-white p-8 rounded-lg shadow-lg mt-6">
-                                <h2 className="text-2xl font-bold mb-6 border-b pb-2">歷史紀錄</h2>
-                                {records.length === 0 ? (
-                                    <p className="text-gray-500">尚無紀錄。</p>
-                                ) : (
-                                    <div className="grid gap-4">
-                                        {records.map(rec => (
-                                            <div key={rec.id} className="border p-4 rounded flex justify-between items-center hover:bg-gray-50">
-                                                <div>
-                                                    <div className="font-bold text-lg">{rec.title}</div>
-                                                    <div className="text-sm text-gray-500">{rec.date}</div>
-                                                    <div className="text-xs bg-gray-200 px-2 py-1 rounded inline-block mt-1">
-                                                        {rec.content.length} 個單元
+                                        {records.length === 0 ? <p className="text-center text-gray-500">尚無紀錄</p> : (
+                                            <div className="space-y-4">
+                                                {records.map(r => (
+                                                    <div key={r.id} className="border p-4 rounded hover:bg-gray-50 transition flex justify-between items-center flex-wrap gap-4">
+                                                        <div>
+                                                            <div className="font-bold text-lg text-amber-900">{r.title}</div>
+                                                            <div className="text-sm text-gray-500">
+                                                                {r.date} {r.isTemp && <span className="text-red-500">(未完成)</span>}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={()=>handleDownload('html', r)} className="bg-red-100 text-red-700 px-3 py-2 rounded hover:bg-red-200 text-sm font-bold">
+                                                                <i className="fas fa-print mr-1"></i> HTML/PDF
+                                                            </button>
+                                                            <button onClick={()=>handleDownload('docx', r)} className="bg-blue-100 text-blue-700 px-3 py-2 rounded hover:bg-blue-200 text-sm font-bold">
+                                                                <i className="fas fa-file-word mr-1"></i> Word
+                                                            </button>
+                                                            <button onClick={()=>handleDownload('json', r)} className="bg-green-100 text-green-700 px-3 py-2 rounded hover:bg-green-200 text-sm">
+                                                                <i className="fas fa-download mr-1"></i> 備份
+                                                            </button>
+                                                            <button onClick={()=>{
+                                                                const newRecs = records.filter(x=>x.id!==r.id);
+                                                                setRecords(newRecs);
+                                                                localStorage.setItem('gept_records', JSON.stringify(newRecs));
+                                                            }} className="bg-gray-200 text-gray-600 px-3 py-2 rounded hover:bg-gray-300 text-sm">
+                                                                <i className="fas fa-trash"></i>
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <button 
-                                                        onClick={() => loadRecord(rec)}
-                                                        className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-                                                    >
-                                                        打開
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => deleteRecord(rec.id)}
-                                                        className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
-                                                    >
-                                                        刪除
-                                                    </button>
-                                                </div>
+                                                ))}
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
                                 )}
                             </div>
                         )}
                     </main>
-
-                    {/* Hidden Area for PDF/Word Export (The Clean Source) */}
-                    <div id="hidden-export-area">
-                        {generatedContent.length > 0 && <TextbookContent data={generatedContent} />}
-                    </div>
                 </div>
             );
         };
