@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 單字卡批次生成器 (多模型備援版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Scrollbar for better UX */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 h-screen flex flex-col font-sans">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm p-4 z-10">
+        <div class="container mx-auto flex flex-col md:flex-row justify-between items-center">
+            <h1 class="text-xl font-bold text-indigo-600 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layers"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                AI 單字卡生成器 (Multi-Model)
+            </h1>
+            <div class="mt-2 md:mt-0 flex items-center gap-2">
+                <span class="text-sm text-gray-500">API Key:</span>
+                <input type="password" id="apiKeyInput" value="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" class="border border-gray-300 rounded px-2 py-1 text-sm w-48 md:w-64 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="sk-or-...">
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 container mx-auto p-4 flex flex-col md:flex-row gap-4 overflow-hidden">
+        
+        <!-- Left Panel: Input & Controls -->
+        <div class="w-full md:w-1/3 flex flex-col gap-4 bg-white p-4 rounded-lg shadow h-full overflow-y-auto">
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">單字列表 (一行一個)</label>
+                <textarea id="inputWords" class="w-full h-64 p-3 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-sm" placeholder="apple&#10;banana&#10;ubiquitous..."></textarea>
+                <p class="text-xs text-gray-500 mt-1 text-right">已輸入: <span id="inputCount">0</span> 個單字</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btnStart" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded transition flex items-center justify-center gap-2">
+                    <span id="btnStartIcon">▶</span> <span id="btnStartText">開始生成</span>
+                </button>
+                <button id="btnPause" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded transition hidden">
+                    暫停
+                </button>
+                <button id="btnClear" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded transition">
+                    清除重置
+                </button>
+            </div>
+
+            <div id="statusBox" class="bg-blue-50 border-l-4 border-blue-500 p-3 rounded hidden transition-all">
+                <p class="text-sm text-blue-700 font-medium break-words" id="statusText">準備就緒</p>
+            </div>
+
+            <hr class="border-gray-200">
+
+            <div class="flex flex-col gap-2">
+                 <div class="flex justify-between items-center">
+                    <span class="text-sm font-bold text-gray-700">進度</span>
+                    <span class="text-xs text-gray-500" id="progressText">0 / 0</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                    <div id="progressBar" class="bg-green-500 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                 <p class="text-xs text-gray-500 text-right" id="estimatedTime">剩餘時間: 計算中...</p>
+            </div>
+
+             <div class="mt-auto pt-4">
+                <button id="btnDownload" class="w-full bg-gray-800 hover:bg-gray-900 text-white font-semibold py-2 px-4 rounded flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    下載 JSON 結果
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Panel: Results Preview -->
+        <div class="w-full md:w-2/3 flex flex-col bg-white rounded-lg shadow h-full overflow-hidden">
+            <div class="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                <h2 class="font-bold text-gray-700">生成結果預覽</h2>
+                <span class="text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full" id="resultCountBadge">0 筆資料</span>
+            </div>
+            <div class="flex-1 overflow-auto p-4" id="resultsContainer">
+                <!-- Empty State -->
+                <div id="emptyState" class="h-full flex flex-col items-center justify-center text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mb-2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+                    <p>尚未生成任何資料</p>
+                </div>
+                <!-- Dynamic Content will be inserted here -->
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- Configuration & State ---
+        const CONFIG = {
+            localStorageKey: 'vocab_generator_state_v1',
+            // Priority list of models
+            models: [
+                'xiaomi/mimo-v2-flash:free',
+                'mistralai/devstral-2512:free',
+                'nvidia/nemotron-3-nano-30b-a3b:free'
+            ],
+            apiEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+            siteUrl: 'http://localhost', 
+            siteName: 'VocabGenLocal'
+        };
+
+        let state = {
+            inputRaw: '',
+            wordList: [],
+            processedData: [], 
+            currentIndex: 0,
+            isProcessing: false,
+            startTime: null,
+            averageTimePerWord: 0
+        };
+
+        // --- DOM Elements ---
+        const els = {
+            input: document.getElementById('inputWords'),
+            inputCount: document.getElementById('inputCount'),
+            apiKey: document.getElementById('apiKeyInput'),
+            btnStart: document.getElementById('btnStart'),
+            btnStartText: document.getElementById('btnStartText'),
+            btnStartIcon: document.getElementById('btnStartIcon'),
+            btnPause: document.getElementById('btnPause'),
+            btnClear: document.getElementById('btnClear'),
+            btnDownload: document.getElementById('btnDownload'),
+            statusBox: document.getElementById('statusBox'),
+            statusText: document.getElementById('statusText'),
+            progressBar: document.getElementById('progressBar'),
+            progressText: document.getElementById('progressText'),
+            estimatedTime: document.getElementById('estimatedTime'),
+            resultsContainer: document.getElementById('resultsContainer'),
+            emptyState: document.getElementById('emptyState'),
+            resultCountBadge: document.getElementById('resultCountBadge')
+        };
+
+        // --- Initialization ---
+        window.onload = () => {
+            loadState();
+            updateUI();
+            els.input.addEventListener('input', handleInputUpdate);
+        };
+
+        function handleInputUpdate() {
+            const raw = els.input.value;
+            const words = raw.split('\n').map(w => w.trim()).filter(w => w);
+            els.inputCount.textContent = words.length;
+            
+            if (!state.isProcessing) {
+                state.inputRaw = raw;
+                if (state.currentIndex === 0) {
+                     state.wordList = words;
+                }
+            }
+        }
+
+        // --- Persistence (LocalStorage) ---
+        function saveState() {
+            try {
+                localStorage.setItem(CONFIG.localStorageKey, JSON.stringify(state));
+            } catch (e) {
+                console.error("Save failed:", e);
+                showStatus("警告: 本地儲存空間已滿，請下載備份。", "text-red-700", "bg-red-50", "border-red-500");
+            }
+        }
+
+        function loadState() {
+            const saved = localStorage.getItem(CONFIG.localStorageKey);
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    state = { ...state, ...parsed };
+                    els.input.value = state.inputRaw;
+                    handleInputUpdate();
+                    renderAllResults();
+                    
+                    if (state.processedData.length > 0 && state.processedData.length === state.wordList.length) {
+                        showStatus("已恢復上次進度：全部完成", "text-green-700", "bg-green-50", "border-green-500");
+                    } else if (state.currentIndex > 0) {
+                        showStatus(`已恢復上次進度：已完成 ${state.currentIndex} 個`, "text-blue-700", "bg-blue-50", "border-blue-500");
+                    }
+                } catch (e) {
+                    console.error("Load failed:", e);
+                    localStorage.removeItem(CONFIG.localStorageKey);
+                }
+            }
+        }
+
+        function clearState() {
+            if(confirm("確定要清除所有進度和資料嗎？")) {
+                localStorage.removeItem(CONFIG.localStorageKey);
+                state = {
+                    inputRaw: '',
+                    wordList: [],
+                    processedData: [],
+                    currentIndex: 0,
+                    isProcessing: false,
+                    startTime: null,
+                    averageTimePerWord: 0
+                };
+                els.input.value = '';
+                handleInputUpdate();
+                renderAllResults();
+                updateUI();
+                showStatus("已重置", "text-gray-700", "bg-gray-50", "border-gray-500");
+            }
+        }
+
+        // --- Core Logic: AI Generation with Fallback ---
+        
+        async function startProcessing() {
+            if (state.currentIndex === 0) {
+                const words = els.input.value.split('\n').map(w => w.trim()).filter(w => w);
+                if (words.length === 0) {
+                    alert("請先輸入單字列表！");
+                    return;
+                }
+                state.wordList = words;
+                state.inputRaw = els.input.value;
+            }
+
+            state.isProcessing = true;
+            state.startTime = Date.now();
+            updateUI();
+
+            processNextWord();
+        }
+
+        function pauseProcessing() {
+            state.isProcessing = false;
+            updateUI();
+            showStatus("已暫停。點擊繼續以恢復。", "text-yellow-700", "bg-yellow-50", "border-yellow-500");
+        }
+
+        async function processNextWord() {
+            if (!state.isProcessing) return;
+
+            if (state.currentIndex >= state.wordList.length) {
+                finishProcessing();
+                return;
+            }
+
+            const word = state.wordList[state.currentIndex];
+            const apiKey = els.apiKey.value.trim();
+
+            if (!apiKey) {
+                alert("請輸入 API Key");
+                pauseProcessing();
+                return;
+            }
+
+            const startTime = Date.now();
+
+            try {
+                // Modified to support fallback logic
+                const data = await fetchWordDataWithFallback(word, apiKey);
+                
+                state.processedData.push(data);
+                renderSingleResult(data, true);
+                
+                const duration = Date.now() - startTime;
+                updateStats(duration);
+
+                state.currentIndex++;
+                saveState();
+                updateUI();
+
+                setTimeout(processNextWord, 1000); // 1s delay to be safe with free tiers
+
+            } catch (error) {
+                console.error(error);
+                state.isProcessing = false;
+                updateUI();
+                showStatus(`嚴重錯誤 "${word}": ${error.message}。請檢查 API Key 或稍後再試。`, "text-red-700", "bg-red-50", "border-red-500");
+            }
+        }
+
+        async function fetchWordDataWithFallback(word, apiKey) {
+            let lastError = null;
+
+            // Iterate through models in priority order
+            for (let i = 0; i < CONFIG.models.length; i++) {
+                const modelName = CONFIG.models[i];
+                
+                // Update UI to show which model is being used
+                let statusMsg = `正在處理 (${state.currentIndex + 1}/${state.wordList.length}): ${word}`;
+                if (i > 0) statusMsg += ` [重試: ${modelName.split('/')[1]}]`;
+                else statusMsg += ` [模型: ${modelName.split('/')[1]}]`;
+                
+                showStatus(statusMsg, "text-indigo-700", "bg-indigo-50", "border-indigo-500");
+
+                try {
+                    return await fetchWordDataSingle(word, apiKey, modelName);
+                } catch (e) {
+                    console.warn(`Model ${modelName} failed for word ${word}:`, e);
+                    lastError = e;
+                    // Continue to next model in loop
+                }
+            }
+
+            // If we get here, all models failed
+            throw new Error(`所有模型嘗試皆失敗。最後錯誤: ${lastError ? lastError.message : 'Unknown'}`);
+        }
+
+        async function fetchWordDataSingle(word, apiKey, model) {
+            const prompt = `
+            Analyze the English word: "${word}".
+            Output valid JSON only. No markdown code blocks.
+            
+            JSON keys must be:
+            {
+                "word": "${word}",
+                "part_of_speech": "String (noun/verb/etc)",
+                "definition_zh": "Traditional Chinese definition",
+                "example_en": "One English example sentence",
+                "example_zh": "Translation of example in Traditional Chinese",
+                "special_usage": "Idiom/collocation in Trad Chinese or '無'"
+            }
+            `;
+
+            const response = await fetch(CONFIG.apiEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'HTTP-Referer': CONFIG.siteUrl,
+                    'X-Title': CONFIG.siteName,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [
+                        { role: "system", content: "You are a dictionary bot. Output ONLY raw JSON." },
+                        { role: "user", content: prompt }
+                    ]
+                })
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                // If 429 (rate limit) or 5xx, throwing error triggers fallback
+                throw new Error(`API Status ${response.status}: ${errText.substring(0, 100)}`);
+            }
+
+            const result = await response.json();
+            
+            // Validate response structure
+            if (!result.choices || !result.choices[0] || !result.choices[0].message) {
+                throw new Error("Invalid API response format");
+            }
+
+            const content = result.choices[0].message.content;
+            
+            // Cleanup JSON string
+            const jsonStr = content.replace(/```json/g, '').replace(/```/g, '').trim();
+            
+            try {
+                const parsed = JSON.parse(jsonStr);
+                // Basic validation of fields
+                if(!parsed.definition_zh) throw new Error("Missing definition");
+                return parsed;
+            } catch (e) {
+                throw new Error("JSON Parse Error (Model may have output text instead of JSON)");
+            }
+        }
+
+        function finishProcessing() {
+            state.isProcessing = false;
+            updateUI();
+            showStatus("所有單字已處理完成！", "text-green-700", "bg-green-50", "border-green-500");
+            saveState();
+        }
+
+        // --- UI Helper Functions ---
+
+        function updateUI() {
+            const total = state.wordList.length || 0;
+            const current = state.currentIndex;
+            const percent = total === 0 ? 0 : Math.round((current / total) * 100);
+
+            // Progress Bar
+            els.progressBar.style.width = `${percent}%`;
+            els.progressText.textContent = `${current} / ${total} (${percent}%)`;
+            els.resultCountBadge.textContent = `${state.processedData.length} 筆資料`;
+
+            // Buttons State
+            if (state.isProcessing) {
+                els.btnStart.classList.add('hidden');
+                els.btnPause.classList.remove('hidden');
+                els.input.disabled = true;
+                els.btnClear.disabled = true;
+            } else {
+                els.btnStart.classList.remove('hidden');
+                els.btnPause.classList.add('hidden');
+                
+                if (current > 0 && current < total) {
+                    els.btnStartText.textContent = "繼續生成";
+                    els.btnStartIcon.textContent = "⏯";
+                } else if (current === total && total > 0) {
+                     els.btnStartText.textContent = "重新生成 (需重置)";
+                     els.btnStart.disabled = true;
+                     els.btnStart.classList.add('opacity-50', 'cursor-not-allowed');
+                } else {
+                    els.btnStartText.textContent = "開始生成";
+                    els.btnStartIcon.textContent = "▶";
+                     els.btnStart.disabled = false;
+                     els.btnStart.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+                
+                els.input.disabled = (current > 0); 
+                els.btnClear.disabled = false;
+            }
+
+            // Download Button
+            els.btnDownload.disabled = state.processedData.length === 0;
+
+            // Results Container
+            if (state.processedData.length > 0) {
+                els.emptyState.classList.add('hidden');
+            } else {
+                els.emptyState.classList.remove('hidden');
+                els.resultsContainer.innerHTML = '';
+                els.resultsContainer.appendChild(els.emptyState);
+            }
+        }
+
+        function updateStats(lastDuration) {
+            if (state.averageTimePerWord === 0) {
+                state.averageTimePerWord = lastDuration;
+            } else {
+                state.averageTimePerWord = (state.averageTimePerWord * 0.7) + (lastDuration * 0.3);
+            }
+
+            const remaining = state.wordList.length - state.currentIndex;
+            const timeLeftMs = remaining * state.averageTimePerWord;
+            
+            let timeStr = "";
+            if (timeLeftMs < 60000) {
+                timeStr = `${Math.ceil(timeLeftMs / 1000)} 秒`;
+            } else {
+                timeStr = `${Math.ceil(timeLeftMs / 60000)} 分鐘`;
+            }
+
+            els.estimatedTime.textContent = `剩餘約: ${timeStr} (平均 ${Math.round(state.averageTimePerWord/1000*10)/10}s/字)`;
+        }
+
+        function showStatus(msg, textColor, bgColor, borderColor) {
+            els.statusBox.classList.remove('hidden');
+            els.statusBox.className = `border-l-4 p-3 rounded mb-2 ${bgColor} ${borderColor}`;
+            els.statusText.textContent = msg;
+        }
+
+        function renderAllResults() {
+            els.resultsContainer.innerHTML = '';
+            els.resultsContainer.appendChild(els.emptyState);
+            [...state.processedData].reverse().forEach(data => renderSingleResult(data, false));
+        }
+
+        function renderSingleResult(data, animate) {
+            if (!els.emptyState.classList.contains('hidden')) {
+                els.emptyState.classList.add('hidden');
+            }
+
+            const card = document.createElement('div');
+            card.className = "bg-white border border-gray-200 rounded-lg p-4 mb-3 shadow-sm hover:shadow-md transition text-sm relative group";
+            
+            if (animate) {
+                card.classList.add('animate-pulse');
+                setTimeout(() => card.classList.remove('animate-pulse'), 1000);
+            }
+
+            const html = `
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <h3 class="text-lg font-bold text-indigo-700">${data.word}</h3>
+                        <span class="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded mr-2">${data.part_of_speech}</span>
+                        <span class="text-gray-800 font-medium">${data.definition_zh}</span>
+                    </div>
+                    <span class="text-xs text-gray-400 font-mono">JSON</span>
+                </div>
+                <div class="bg-gray-50 p-2 rounded mb-2 border-l-2 border-indigo-300">
+                    <p class="text-gray-700 italic mb-1">"${data.example_en}"</p>
+                    <p class="text-gray-500 text-xs">${data.example_zh}</p>
+                </div>
+                ${data.special_usage && data.special_usage !== '無' ? `
+                <div class="text-xs text-orange-700 bg-orange-50 px-2 py-1 rounded inline-block">
+                    💡 用法: ${data.special_usage}
+                </div>` : ''}
+            `;
+
+            card.innerHTML = html;
+            els.resultsContainer.insertBefore(card, els.resultsContainer.firstChild);
+        }
+
+        function downloadJSON() {
+            const dataStr = JSON.stringify(state.processedData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            
+            a.href = url;
+            a.download = `vocabulary_list_${timestamp}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // --- Event Listeners ---
+        els.btnStart.addEventListener('click', startProcessing);
+        els.btnPause.addEventListener('click', pauseProcessing);
+        els.btnClear.addEventListener('click', clearState);
+        els.btnDownload.addEventListener('click', downloadJSON);
+
+    </script>
+</body>
+</html>
