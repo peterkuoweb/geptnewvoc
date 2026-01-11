@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 單字卡生成器 (v5 極速批次版)</title>
+    <title>AI 單字卡生成器 (v6 自訂批次版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -12,6 +12,23 @@
         ::-webkit-scrollbar-thumb:hover { background: #555; }
         .card-enter { animation: slideIn 0.3s ease-out forwards; }
         @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Slider styling */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #4f46e5;
+            cursor: pointer;
+            margin-top: -6px; 
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #e5e7eb;
+            border-radius: 2px;
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 h-screen flex flex-col font-sans">
@@ -20,8 +37,8 @@
     <header class="bg-white shadow-sm p-4 z-10">
         <div class="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
             <h1 class="text-xl font-bold text-indigo-600 flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-rocket"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.1 4-1 4-1"/><path d="M12 15v5s3.03-.55 4-2c1.1-1.62 1-4 1-4"/></svg>
-                AI 單字卡生成器 (v5 極速批次版)
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings-2"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+                AI 單字卡生成器 (v6 自訂批次版)
             </h1>
             <div class="flex items-center gap-2 w-full md:w-auto">
                 <span class="text-sm text-gray-500 whitespace-nowrap">API Key:</span>
@@ -49,21 +66,21 @@
                 </button>
             </div>
 
-            <!-- Restore Backup Input (Hidden initially, triggered by JS) -->
+            <!-- Restore Backup Input (Hidden initially) -->
             <input type="file" id="backupInput" accept=".json" class="hidden">
 
             <div>
                 <label class="block text-sm font-bold text-gray-700 mb-1">📝 步驟 2: 輸入單字列表</label>
                 <textarea id="inputWords" class="w-full h-48 p-3 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-sm" placeholder="apple&#10;banana&#10;cat..."></textarea>
                 <div class="flex justify-between mt-1">
-                    <button id="btnLoadDemo" class="text-xs text-indigo-500 hover:underline">載入範例</button>
+                    <button id="btnLoadDemo" class="text-xs text-indigo-500 hover:underline">載入範例 (30個)</button>
                     <p class="text-xs text-gray-500">已輸入: <span id="inputCount">0</span> 個單字</p>
                 </div>
             </div>
 
             <div class="grid grid-cols-2 gap-2">
                 <button id="btnStart" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded transition flex items-center justify-center gap-2 shadow-md hover:shadow-lg">
-                    <span id="btnStartIcon">▶</span> <span id="btnStartText">開始生成 (批次)</span>
+                    <span id="btnStartIcon">▶</span> <span id="btnStartText">開始設定與生成</span>
                 </button>
                 <button id="btnPause" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded transition hidden shadow-md">
                     暫停
@@ -103,7 +120,7 @@
             <div class="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                 <h2 class="font-bold text-gray-700 flex items-center gap-2">
                     生成結果預覽
-                    <span class="text-xs font-normal text-gray-500 ml-2">(批次模式: 每 10 個顯示一次)</span>
+                    <span class="text-xs font-normal text-gray-500 ml-2">(顯示最新生成)</span>
                 </h2>
                 <span class="text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full" id="resultCountBadge">0 筆資料</span>
             </div>
@@ -116,22 +133,48 @@
         </div>
     </main>
 
-    <!-- Modal for Backup Prompt -->
-    <div id="modalOverlay" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
-        <div class="bg-white rounded-lg p-6 w-96 shadow-xl transform transition-all scale-100">
-            <h3 class="text-lg font-bold text-indigo-700 mb-2">📥 恢復進度</h3>
-            <p class="text-sm text-gray-600 mb-4">請問您是否有先前下載的 JSON 備份檔？上傳後可以直接跳過已完成的單字。</p>
-            <div class="flex gap-2 justify-end">
-                <button id="btnNoBackup" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">沒有，直接開始</button>
-                <button id="btnYesBackup" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm">是，上傳檔案</button>
+    <!-- Modal for Settings & Backup -->
+    <div id="modalOverlay" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-xl p-6 w-96 shadow-2xl transform transition-all scale-100 border border-gray-200">
+            <h3 class="text-xl font-bold text-indigo-700 mb-4 flex items-center gap-2">
+                ⚙️ 生成設定
+            </h3>
+
+            <!-- Batch Size Slider -->
+            <div class="mb-6">
+                <label class="flex justify-between text-sm font-semibold text-gray-700 mb-2">
+                    <span>單次批次數量</span>
+                    <span id="batchSizeDisplay" class="text-indigo-600 font-bold bg-indigo-50 px-2 rounded">10</span>
+                </label>
+                <input type="range" id="batchSizeRange" min="5" max="21" value="10" step="1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                <div class="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>5 (慢/穩)</span>
+                    <span>21 (快/險)</span>
+                </div>
             </div>
+
+            <hr class="border-gray-200 mb-4">
+            
+            <p class="text-sm text-gray-600 mb-4 font-medium">是否要恢復上次的進度？</p>
+            
+            <div class="flex flex-col gap-3">
+                <button id="btnYesBackup" class="w-full py-2.5 bg-white border-2 border-indigo-600 text-indigo-700 rounded-lg hover:bg-indigo-50 font-semibold text-sm flex items-center justify-center gap-2 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    上傳備份檔 (JSON)
+                </button>
+                <button id="btnNoBackup" class="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold text-sm shadow-md transition transform active:scale-95">
+                    🚀 直接開始生成
+                </button>
+            </div>
+            
+            <button id="btnCancelModal" class="mt-4 text-xs text-gray-400 hover:text-gray-600 w-full text-center underline">取消</button>
         </div>
     </div>
 
     <script>
         // --- Configuration ---
         const CONFIG = {
-            localStorageKey: 'vocab_generator_state_v5',
+            localStorageKey: 'vocab_generator_state_v6',
             models: [
                 'xiaomi/mimo-v2-flash:free',
                 'mistralai/devstral-2512:free',
@@ -139,20 +182,19 @@
             ],
             apiEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
             siteUrl: 'http://localhost', 
-            siteName: 'VocabGenLocal',
-            BATCH_SIZE: 10 // Process 10 words at a time
+            siteName: 'VocabGenLocal'
         };
 
         let state = {
             inputRaw: '',
             wordList: [],
-            processedMap: {}, // Map<word, resultObj> for fast lookup
+            processedMap: {}, 
             currentIndex: 0,
             isProcessing: false,
-            averageTimePerBatch: 0
+            averageTimePerBatch: 0,
+            batchSize: 10 // Default
         };
 
-        // Reference Dictionary
         let referenceDictionary = new Map(); 
 
         // --- DOM Elements ---
@@ -180,9 +222,13 @@
             resultsContainer: document.getElementById('resultsContainer'),
             emptyState: document.getElementById('emptyState'),
             resultCountBadge: document.getElementById('resultCountBadge'),
+            // Modal Elements
             modal: document.getElementById('modalOverlay'),
             btnYesBackup: document.getElementById('btnYesBackup'),
-            btnNoBackup: document.getElementById('btnNoBackup')
+            btnNoBackup: document.getElementById('btnNoBackup'),
+            btnCancelModal: document.getElementById('btnCancelModal'),
+            batchSizeRange: document.getElementById('batchSizeRange'),
+            batchSizeDisplay: document.getElementById('batchSizeDisplay')
         };
 
         // --- Initialization ---
@@ -204,6 +250,40 @@
                 }
             }
         }
+
+        // --- Modal & Batch Size Logic ---
+
+        // Update Slider Display
+        els.batchSizeRange.addEventListener('input', (e) => {
+            const val = e.target.value;
+            els.batchSizeDisplay.textContent = val;
+            state.batchSize = parseInt(val);
+        });
+
+        // Open Modal
+        function showStartModal() {
+            els.modal.classList.remove('hidden');
+        }
+
+        function hideModal() {
+            els.modal.classList.add('hidden');
+        }
+
+        els.btnCancelModal.addEventListener('click', hideModal);
+
+        els.btnNoBackup.addEventListener('click', () => {
+            // Update batch size from slider
+            state.batchSize = parseInt(els.batchSizeRange.value);
+            hideModal();
+            startGenerationLoop();
+        });
+
+        els.btnYesBackup.addEventListener('click', () => {
+            // Update batch size before triggering file input
+            state.batchSize = parseInt(els.batchSizeRange.value);
+            els.backupInput.click();
+        });
+
 
         // --- Reference File Logic ---
         els.fileInput.addEventListener('change', (e) => {
@@ -259,22 +339,7 @@
             }
         });
 
-        // --- Backup / Restore Logic ---
-        
-        // Triggered by "Start" button flow
-        function askForBackup() {
-            els.modal.classList.remove('hidden');
-        }
-
-        els.btnNoBackup.addEventListener('click', () => {
-            els.modal.classList.add('hidden');
-            startGenerationLoop();
-        });
-
-        els.btnYesBackup.addEventListener('click', () => {
-            els.backupInput.click();
-        });
-
+        // --- Backup Restore Logic ---
         els.backupInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -283,7 +348,6 @@
                 try {
                     const json = JSON.parse(event.target.result);
                     if(Array.isArray(json)) {
-                        // Restore logic
                         let restoredCount = 0;
                         json.forEach(item => {
                             if(item.word) {
@@ -291,10 +355,10 @@
                                 restoredCount++;
                             }
                         });
-                        alert(`成功還原 ${restoredCount} 筆資料！將從斷點繼續。`);
-                        renderAllResults(); // Show restored data
-                        els.modal.classList.add('hidden');
-                        startGenerationLoop(); // Auto start
+                        alert(`成功還原 ${restoredCount} 筆資料！將從斷點繼續。\n目前批次大小設定為: ${state.batchSize}`);
+                        renderAllResults();
+                        hideModal();
+                        startGenerationLoop();
                     } else {
                         alert("備份檔格式不正確 (不是陣列)");
                     }
@@ -305,18 +369,17 @@
             reader.readAsText(file);
         });
 
-
         // --- State Management ---
         function saveState() {
             try {
-                // Convert Map back to array for storage/download
                 const processedArray = Object.values(state.processedMap);
                 localStorage.setItem(CONFIG.localStorageKey, JSON.stringify({
                     inputRaw: state.inputRaw,
-                    processedData: processedArray, // Save as array for compatibility
+                    processedData: processedArray, 
                     currentIndex: state.currentIndex,
                     averageTimePerBatch: state.averageTimePerBatch,
-                    apiKey: els.apiKey.value
+                    apiKey: els.apiKey.value,
+                    batchSize: state.batchSize
                 }));
             } catch (e) {
                 console.error("Save failed:", e);
@@ -332,8 +395,12 @@
                     state.inputRaw = parsed.inputRaw || '';
                     state.currentIndex = parsed.currentIndex || 0;
                     state.averageTimePerBatch = parsed.averageTimePerBatch || 0;
+                    if(parsed.batchSize) {
+                        state.batchSize = Math.max(5, Math.min(21, parsed.batchSize));
+                        els.batchSizeRange.value = state.batchSize;
+                        els.batchSizeDisplay.textContent = state.batchSize;
+                    }
                     
-                    // Rebuild processedMap
                     state.processedMap = {};
                     if(Array.isArray(parsed.processedData)) {
                         parsed.processedData.forEach(item => {
@@ -358,25 +425,20 @@
         // --- Core Generation Logic ---
 
         function handleStartClick() {
-            if (state.isProcessing) return; // Ignore if running
+            if (state.isProcessing) return; 
 
-            // Prepare word list
             const words = els.input.value.split('\n').map(w => w.trim()).filter(w => w);
             if (words.length === 0) { alert("請輸入單字"); return; }
+            
+            // Sync word list
             state.wordList = words;
             state.inputRaw = els.input.value;
 
             const apiKey = els.apiKey.value.trim();
             if (!apiKey) { alert("請輸入 API Key"); return; }
 
-            // If it's a fresh start (index 0) and we haven't processed anything yet, ask for backup
-            const processedCount = Object.keys(state.processedMap).length;
-            if (state.currentIndex === 0 && processedCount === 0) {
-                askForBackup();
-            } else {
-                // Resume
-                startGenerationLoop();
-            }
+            // Always show modal to allow setting batch size
+            showStartModal();
         }
 
         function startGenerationLoop() {
@@ -394,28 +456,19 @@
         async function processNextBatch() {
             if (!state.isProcessing) return;
 
-            // Find next batch of unprocessed words
-            // We iterate through wordList. If word is in processedMap, skip.
-            // Collect up to BATCH_SIZE words.
-            
+            // Dynamically collect batch based on current slider setting
+            const CURRENT_BATCH_SIZE = state.batchSize;
             let batch = [];
-            let batchIndices = [];
             
-            // Sync currentIndex to actual progress (find first unprocessed)
-            // But user might have random gaps if they modified list. 
-            // Simple approach: Linear scan from currentIndex
-            
-            while (state.currentIndex < state.wordList.length && batch.length < CONFIG.BATCH_SIZE) {
+            // Linear scan to find next unprocessed words
+            while (state.currentIndex < state.wordList.length && batch.length < CURRENT_BATCH_SIZE) {
                 const word = state.wordList[state.currentIndex];
                 const cleanWord = word.toLowerCase();
                 
                 if (state.processedMap[cleanWord]) {
-                    // Already done
                     state.currentIndex++;
                 } else {
-                    // Need to process
                     batch.push(word);
-                    batchIndices.push(state.currentIndex);
                     state.currentIndex++; 
                 }
             }
@@ -424,57 +477,45 @@
                 if (state.currentIndex >= state.wordList.length) {
                     finishProcessing();
                 } else {
-                    // Should not happen unless logic bug, retry next tick
                     setTimeout(processNextBatch, 100);
                 }
                 return;
             }
 
-            // Execute Batch Request
             const startTime = Date.now();
             
             try {
                 const dataArray = await fetchBatchWithFallback(batch, els.apiKey.value.trim());
                 
-                // Process results
                 dataArray.forEach(item => {
                     // Inject Category
                     const refLevel = referenceDictionary.get(item.word.toLowerCase().trim());
                     item.category = refLevel ? `全民英檢(${refLevel})` : "無";
                     
-                    // Store
                     state.processedMap[item.word.toLowerCase()] = item;
                     renderSingleResult(item, true);
                 });
 
-                // Update Stats
                 const duration = Date.now() - startTime;
-                updateStats(duration);
+                updateStats(duration, CURRENT_BATCH_SIZE);
                 saveState();
                 updateUI();
 
-                // Next loop
                 setTimeout(processNextBatch, 1000); 
 
             } catch (error) {
                 console.error("Batch Failed:", error);
-                
-                // If 401, stop hard
                 if (error.message.includes("401")) {
                     state.isProcessing = false;
                     updateUI();
                     alert("API Key 無效 (401)。請檢查 Key。");
                     return;
                 }
-
-                // If other error, we should probably rollback indices so we can retry?
-                // Or try one by one?
-                // For simplicity in this demo: Pause and alert.
-                // Rollback:
+                // Rollback index
                 state.currentIndex -= batch.length; 
                 state.isProcessing = false;
                 updateUI();
-                showStatus(`批次失敗 (${batch[0]}...): ${error.message}。請點擊繼續以重試。`, "text-red-700", "bg-red-50", "border-red-500");
+                showStatus(`批次失敗: ${error.message}。請暫停後重新開始。`, "text-red-700", "bg-red-50", "border-red-500");
             }
         }
 
@@ -484,7 +525,7 @@
             for (const model of CONFIG.models) {
                 const displayModel = model.split('/')[1];
                 showStatus(
-                    `正在批次處理 ${wordsArray.length} 個單字 (${wordsArray[0]}...)... [模型: ${displayModel}]`, 
+                    `正在批次處理 ${wordsArray.length} 個單字... [${displayModel}]`, 
                     "text-indigo-700", "bg-indigo-50", "border-indigo-500"
                 );
 
@@ -496,25 +537,23 @@
                     if (e.message.includes("401")) throw e;
                 }
             }
-            throw new Error(`所有模型皆失敗。最後錯誤: ${lastError ? lastError.message : '未知'}`);
+            throw new Error(`所有模型皆失敗: ${lastError ? lastError.message : '未知'}`);
         }
 
         async function fetchBatchData(words, apiKey, model) {
-            // Prompt engineered for JSON Array
             const prompt = `
-            Analyze the following list of English words: ${JSON.stringify(words)}.
-            
-            Return a JSON ARRAY of objects. Each object must strictly follow this format:
+            Analyze: ${JSON.stringify(words)}.
+            Return JSON ARRAY.
+            Format per object:
             {
-                "word": "the input word",
-                "part_of_speech": "part of speech (e.g. noun)",
-                "definition_zh": "Traditional Chinese definition",
-                "example_en": "Example sentence in English",
-                "example_zh": "Traditional Chinese translation of the example",
-                "special_usage": "Any idiom/collocation in Trad Chinese or '無'"
+                "word": "word",
+                "part_of_speech": "POS",
+                "definition_zh": "Trad Chinese def",
+                "example_en": "Eng example",
+                "example_zh": "Trad Chinese trans",
+                "special_usage": "Usage or '無'"
             }
-
-            OUTPUT ONLY VALID JSON ARRAY. NO MARKDOWN.
+            OUTPUT RAW JSON ARRAY ONLY.
             `;
 
             const response = await fetch(CONFIG.apiEndpoint, {
@@ -541,49 +580,28 @@
 
             const resJson = await response.json();
             let content = resJson.choices[0].message.content;
-            
-            // Clean Markdown
             content = content.replace(/```json/g, '').replace(/```/g, '').trim();
             
             try {
                 const parsed = JSON.parse(content);
-                if (!Array.isArray(parsed)) throw new Error("Output is not an array");
+                if (!Array.isArray(parsed)) throw new Error("Not an array");
                 return parsed;
             } catch (e) {
-                throw new Error("JSON Parse Failed: " + content.substring(0, 50));
+                throw new Error("JSON Parse Failed");
             }
         }
-
-        // --- API Test ---
-        els.btnTestKey.addEventListener('click', async () => {
-            els.btnTestKey.disabled = true;
-            els.btnTestKey.textContent = "Testing...";
-            try {
-                await fetchBatchData(["test"], els.apiKey.value, CONFIG.models[0]);
-                alert("API Key 測試成功！");
-                saveState();
-            } catch (e) {
-                alert("測試失敗: " + e.message);
-            } finally {
-                els.btnTestKey.disabled = false;
-                els.btnTestKey.textContent = "測試連線";
-            }
-        });
 
         // --- UI Helpers ---
 
         function finishProcessing() {
             state.isProcessing = false;
             updateUI();
-            showStatus("🎉 所有單字處理完成！", "text-green-700", "bg-green-50", "border-green-500");
+            showStatus("🎉 完成！", "text-green-700", "bg-green-50", "border-green-500");
             saveState();
         }
 
         function updateUI() {
             const total = state.wordList.length || 0;
-            // Calculate actual progress based on processedMap count relative to wordList size
-            // Note: state.currentIndex might be ahead of processedMap size if we skip things, 
-            // but for simple visual, use processedMap size / total.
             const processedCount = Object.keys(state.processedMap).length;
             const percent = total === 0 ? 0 : Math.round((processedCount / total) * 100);
 
@@ -608,7 +626,7 @@
                      els.btnStartText.textContent = "重新生成 (需清除)";
                      els.btnStart.classList.add('opacity-50', 'cursor-not-allowed');
                 } else {
-                    els.btnStartText.textContent = "開始生成 (批次)";
+                    els.btnStartText.textContent = "開始設定與生成";
                     els.btnStartIcon.textContent = "▶";
                     els.btnStart.classList.remove('opacity-50', 'cursor-not-allowed');
                 }
@@ -623,38 +641,27 @@
             if (processedCount > 0) els.emptyState.classList.add('hidden');
         }
 
-        function updateStats(lastBatchDuration) {
-            // weighted average
-            if (state.averageTimePerBatch === 0) state.averageTimePerBatch = lastBatchDuration;
-            else state.averageTimePerBatch = (state.averageTimePerBatch * 0.7) + (lastBatchDuration * 0.3);
-
+        function updateStats(lastBatchDuration, batchSize) {
+            const timePerWord = lastBatchDuration / batchSize;
             const remainingWords = state.wordList.length - Object.keys(state.processedMap).length;
-            const remainingBatches = Math.ceil(remainingWords / CONFIG.BATCH_SIZE);
-            const ms = remainingBatches * state.averageTimePerBatch;
+            const ms = remainingWords * timePerWord;
             
             let timeStr = ms < 60000 ? `${Math.ceil(ms/1000)} 秒` : `${Math.ceil(ms/60000)} 分鐘`;
-            els.estimatedTime.textContent = `剩餘約: ${timeStr} (極速模式)`;
+            els.estimatedTime.textContent = `剩餘約: ${timeStr} (批次:${batchSize})`;
         }
 
         function showStatus(msg, text, bg, border) {
             els.statusBox.classList.remove('hidden');
             els.statusBox.className = `border-l-4 p-3 rounded mb-2 ${bg} ${border} shadow-sm`;
-            els.statusText.className = `text-sm font-medium ${text}`;
             els.statusText.textContent = msg;
         }
 
         function renderAllResults() {
             els.resultsContainer.innerHTML = '';
             els.resultsContainer.appendChild(els.emptyState);
-            const allData = Object.values(state.processedMap); // Order isn't guaranteed in Map/Object, but fine for display
-            // If we want order, we should map wordList -> processedMap
             const orderedData = state.wordList
                 .map(w => state.processedMap[w.toLowerCase()])
-                .filter(item => item); // remove undefined
-            
-            // Reverse for display (newest on top? actually ordered list is better for checking)
-            // Let's stick to newest on top for "feed" feel, or index order?
-            // User usually wants to see what just happened.
+                .filter(item => item);
             [...orderedData].reverse().forEach(data => renderSingleResult(data, false));
         }
 
@@ -681,22 +688,17 @@
                 <div class="pl-2 text-gray-400 text-xs mt-1 mb-2">${data.example_zh}</div>
                 ${data.special_usage && data.special_usage !== '無' ? `<div class="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded inline-block">用法: ${data.special_usage}</div>` : ''}
             `;
-            
-            // Insert at top
             els.resultsContainer.insertBefore(div, els.resultsContainer.firstChild);
         }
 
         function downloadJSON() {
-            // Export in Order of Input List
             const orderedData = state.wordList
                 .map(w => state.processedMap[w.toLowerCase()])
                 .filter(item => item);
-
             const blob = new Blob([JSON.stringify(orderedData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
-            a.download = `vocab_batch_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+            a.href = URL.createObjectURL(blob);
+            a.download = `vocab_${new Date().getTime()}.json`;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
 
@@ -705,9 +707,18 @@
         els.btnPause.addEventListener('click', pauseProcessing);
         els.btnClear.addEventListener('click', clearState);
         els.btnDownload.addEventListener('click', downloadJSON);
+        els.btnTestKey.addEventListener('click', async () => {
+            els.btnTestKey.disabled = true;
+            els.btnTestKey.textContent = "...";
+            try { await fetchBatchData(["test"], els.apiKey.value, CONFIG.models[0]); alert("OK"); saveState(); } 
+            catch (e) { alert("Fail: "+e.message); } 
+            finally { els.btnTestKey.disabled = false; els.btnTestKey.textContent = "測試連線"; }
+        });
         els.btnLoadDemo.addEventListener('click', () => {
             if(state.wordList.length > 0) return;
-            els.input.value = "apple\nbanana\ncat\ndog\nelephant\nfish\ngiraffe\nhat\nice\njump"; // 10 words for a batch
+            // Generate 30 demo words
+            const demo = "apple\nbanana\ncat\ndog\nelephant\nfish\ngiraffe\nhat\nice\njump\nkite\nlion\nmonkey\nnest\norange\npig\nqueen\nrabbit\nsnake\ntiger\numbrella\nvan\nwhale\nxray\nyak\nzebra\nant\nbear\ncow\nduck";
+            els.input.value = demo;
             handleInputUpdate();
         });
 
