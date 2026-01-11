@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Word Voyager - 單字冒險</title>
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIldvcmQgVm95YWdlciIsCiAgInNob3J0X25hbWUiOiAiV29yZFYiLAogICJzdGFydF91cmwiOiAiLiIsCiAgImRpc3BsYXkiOiAic3RhbmRhbG9uZSIsCiAgImJhY2tncm91bmRfY29sb3IiOiAiIzFhMjAzNSIsCiAgInRoZW1lX2NvbG9yIjogIiMwZjE3MmEiLAogICJpY29ucyI6IFtdCn0=">
+    
+    <!-- Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Nunito:wght@600;700&display=swap');
+
+        :root {
+            /* Handle dynamic viewport height on mobile */
+            --app-height: 100dvh; 
+        }
+
+        body {
+            font-family: 'Noto Sans TC', 'Nunito', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+            color: #e2e8f0;
+            margin: 0;
+            padding: 0;
+            height: var(--app-height);
+            width: 100vw;
+            overflow: hidden;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none; /* Prevent text selection for app-like feel */
+        }
+
+        /* Prevent rubber-banding on iOS */
+        body.lock-scroll {
+            position: fixed;
+            width: 100%;
+        }
+
+        /* Animations */
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideInRight {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        .animate-slide-in { animation: slideInRight 0.3s ease-out forwards; }
+        .animate-shake { animation: shake 0.4s ease-in-out; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 4px; }
+
+        /* Card 3D Flip */
+        .perspective-1000 { perspective: 1000px; }
+        .transform-style-3d { transform-style: preserve-3d; }
+        .backface-hidden { backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+
+        /* Layout Utilities */
+        #app {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            /* Padding bottom to avoid nav bar overlay */
+            padding-bottom: 80px; 
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Text Input Selectable */
+        input[type="text"], input[type="search"] {
+            user-select: text; 
+        }
+
+        /* Glassmorphism */
+        .glass {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <!-- Initial Loading Screen -->
+    <div id="loading" class="flex items-center justify-center h-full flex-col bg-slate-900 z-50 absolute inset-0">
+        <div class="text-5xl text-indigo-500 mb-6"><i class="fas fa-rocket animate-float"></i></div>
+        <p class="text-slate-400 tracking-widest text-sm">正在準備您的學習旅程...</p>
+    </div>
+</div>
+
+<script>
+/**
+ * ------------------------------------------------------------------
+ * 1. 狀態與資料管理 (STATE & DATA)
+ * ------------------------------------------------------------------
+ */
+
+const APP_VERSION = '2.1.0';
+const DB_URL = './allvoc.json';
+
+// 預設資料 (若讀取 JSON 失敗時使用)
+const MOCK_DATA = [
+    { word: "apple", part_of_speech: "noun", definition_zh: "蘋果", example_en: "I ate an apple.", example_zh: "我吃了一顆蘋果。", category: "全民英檢(初級)" },
+    { word: "banana", part_of_speech: "noun", definition_zh: "香蕉", example_en: "Monkeys love bananas.", example_zh: "猴子愛吃香蕉。", category: "全民英檢(初級)" },
+    { word: "adventure", part_of_speech: "noun", definition_zh: "冒險", example_en: "They went on an adventure.", example_zh: "他們去冒險了。", category: "單字環遊世界" },
+    { word: "beautiful", part_of_speech: "adj", definition_zh: "美麗的", example_en: "The view is beautiful.", example_zh: "景色很美。", category: "全民英檢(中級)" }
+];
+
+const state = {
+    user: {
+        nickname: null,
+        onboardingDone: false,
+        settings: {
+            notifications: false,
+            sound: true,
+            speechRate: 1.0,
+            notificationTime: "20:00"
+        }
+    },
+    currentBook: null, // 'GEPT_Elem', 'GEPT_Inter', 'GEPT_High', 'Custom_World', 或自訂 ID
+    activeTab: 'learn', // 'learn', 'books', 'profile'
+    vocabulary: [], 
+    customBooks: [], 
+    progress: {}, // { word: { status: 'new'|'learned', nextReview: timestamp, level: 0-5, lastScore: 'green'|'yellow'|'red' } }
+    
+    // 執行階段暫存狀態
+    session: {
+        queue: [], 
+        currentIndex: 0,
+        mode: 'card', 
+        reviewQueue: [], 
+        isReviewingSRS: false 
+    }
+};
+
+// 音效
+const sounds = {
+    correct: new Audio('https://assets.mixkit.co/sfx/preview/mixkit-arcade-game-jump-coin-216.mp3'),
+    wrong: new Audio('https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-946.mp3'),
+    complete: new Audio('https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3')
+};
+
+/**
+ * ------------------------------------------------------------------
+ * 2. 核心邏輯函數 (CORE LOGIC)
+ * ------------------------------------------------------------------
+ */
+
+async function initApp() {
+    // 讀取存檔
+    const savedUser = localStorage.getItem('wv_user_tw');
+    const savedProgress = localStorage.getItem('wv_progress_tw');
+    const savedCustomBooks = localStorage.getItem('wv_customBooks_tw');
+
+    if (savedUser) state.user = JSON.parse(savedUser);
+    if (savedProgress) state.progress = JSON.parse(savedProgress);
+    if (savedCustomBooks) state.customBooks = JSON.parse(savedCustomBooks);
+
+    // 讀取單字庫
+    try {
+        const response = await fetch(DB_URL);
+        if (!response.ok) throw new Error("JSON not found");
+        state.vocabulary = await response.json();
+    } catch (e) {
+        console.warn("Using Mock Data", e);
+        state.vocabulary = MOCK_DATA;
+    }
+
+    // 處理 Mobile Safari 的高度問題
+    const setAppHeight = () => {
+        document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+    }
+    window.addEventListener('resize', setAppHeight);
+    setAppHeight();
+
+    render();
+}
+
+function saveState() {
+    localStorage.setItem('wv_user_tw', JSON.stringify(state.user));
+    localStorage.setItem('wv_progress_tw', JSON.stringify(state.progress));
+    localStorage.setItem('wv_customBooks_tw', JSON.stringify(state.customBooks));
+}
+
+function playSound(type) {
+    if (!state.user.settings.sound) return;
+    if (sounds[type]) {
+        sounds[type].currentTime = 0;
+        sounds[type].play().catch(() => {});
+    }
+}
+
+function speak(text) {
+    // 檢查音檔是否存在 (模擬)
+    const audio = new Audio(`./audio/${text}.mp3`);
+    
+    // 嘗試播放音檔，失敗則使用 Web Speech API
+    const playPromise = audio.play();
+    
+    if (playPromise !== undefined) {
+        playPromise.catch(error => {
+            // 音檔播放失敗，轉用語音合成
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            utterance.rate = state.user.settings.speechRate || 1;
+            speechSynthesis.speak(utterance);
+        });
+    }
+}
+
+function getBookInfo(bookId) {
+    if (bookId === 'GEPT_Elem') return { name: "全民英檢初級", color: "bg-green-600" };
+    if (bookId === 'GEPT_Inter') return { name: "全民英檢中級", color: "bg-blue-600" };
+    if (bookId === 'GEPT_High') return { name: "全民英檢中高級", color: "bg-purple-600" };
+    if (bookId === 'Custom_World') return { name: "單字環遊世界", color: "bg-pink-600" };
+    
+    const custom = state.customBooks.find(b => b.id === bookId);
+    return custom ? { name: custom.name, color: "bg-teal-600" } : { name: "未知教材", color: "bg-gray-600" };
+}
+
+function getBookWords(bookId) {
+    let filtered = [];
+    if (bookId === 'GEPT_Elem') filtered = state.vocabulary.filter(w => w.category && w.category.includes('初級'));
+    else if (bookId === 'GEPT_Inter') filtered = state.vocabulary.filter(w => w.category && w.category.includes('中級') && !w.category.includes('高級'));
+    else if (bookId === 'GEPT_High') filtered = state.vocabulary.filter(w => w.category && w.category.includes('中高級'));
+    else if (bookId === 'Custom_World') filtered = state.vocabulary.filter(w => w.category && w.category.includes('環遊世界'));
+    else {
+        const customBook = state.customBooks.find(b => b.id === bookId);
+        if (customBook) {
+            filtered = state.vocabulary.filter(w => customBook.words.includes(w.word));
+        }
+    }
+    // 依照單字長度排序
+    return filtered.sort((a, b) => a.word.length - b.word.length);
+}
+
+function getLessons(bookId) {
+    const words = getBookWords(bookId);
+    const chunkSize = 7;
+    const lessons = [];
+    if (words.length === 0) return [];
+    
+    for (let i = 0; i < words.length; i += chunkSize) {
+        lessons.push(words.slice(i, i + chunkSize));
+    }
+    return lessons;
+}
+
+// SRS 間隔重複邏輯
+function getSRSReviewWords() {
+    const now = Date.now();
+    const allWords = state.vocabulary;
+    const reviewList = [];
+
+    for (const [wordText, data] of Object.entries(state.progress)) {
+        if (data.status === 'learned' && data.nextReview && data.nextReview <= now) {
+            const wordObj = allWords.find(w => w.word === wordText);
+            if (wordObj) reviewList.push(wordObj);
+        }
+    }
+    
+    // 隨機取出最多 10 個
+    return reviewList.sort(() => Math.random() - 0.5).slice(0, 10);
+}
+
+function updateWordProgress(word, rating) {
+    if (!state.progress[word]) {
+        state.progress[word] = { status: 'learned', level: 0, nextReview: 0, streak: 0 };
+    }
+    
+    const p = state.progress[word];
+    const day = 24 * 60 * 60 * 1000;
+    
+    if (rating === 'red') { // 我不會
+        p.level = 0;
+        p.nextReview = Date.now() + day; 
+        p.streak = 0;
+    } else if (rating === 'yellow') { // 有點印象
+        p.level = Math.max(1, p.level); 
+        p.nextReview = Date.now() + (2 * day); 
+    } else if (rating === 'green') { // 我很熟
+        p.level += 1;
+        p.streak += 1;
+        const interval = Math.pow(2, p.level); // 2, 4, 8, 16...
+        p.nextReview = Date.now() + (interval * day);
+    }
+    saveState();
+}
+
+/**
+ * ------------------------------------------------------------------
+ * 3. 畫面渲染 (UI RENDERERS)
+ * ------------------------------------------------------------------
+ */
+
+function render() {
+    const app = document.getElementById('app');
+    
+    if (!state.user.onboardingDone) {
+        renderOnboarding(app);
+    } else if (!state.currentBook) {
+        // 第一次進入尚未選擇教材，強制導向選擇畫面
+        renderInitialBookSelection(app);
+    } else {
+        renderMainLayout(app);
+    }
+}
+
+// --- 歡迎流程 (Onboarding) ---
+function renderOnboarding(container) {
+    container.innerHTML = `
+        <div class="flex flex-col items-center justify-center h-full p-8 bg-slate-900 text-center animate-fade-in">
+            <div class="text-6xl text-yellow-400 mb-6 animate-float"><i class="fas fa-passport"></i></div>
+            <h1 class="text-3xl font-bold mb-2 text-white">歡迎來到單字冒險</h1>
+            <p class="text-indigo-200 mb-10">準備好開始你的英語旅程了嗎？</p>
+            
+            <div class="w-full max-w-xs space-y-4">
+                <label class="text-sm text-slate-400 block text-left mb-1 ml-1">請輸入你的英文暱稱</label>
+                <input type="text" id="nicknameInput" placeholder="例如: Peter" 
+                    class="w-full p-4 rounded-xl bg-slate-800 border border-slate-600 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-center text-lg transition-all" />
+                <button onclick="handleNicknameSubmit()" 
+                    class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-transform">
+                    開始冒險
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function handleNicknameSubmit() {
+    const input = document.getElementById('nicknameInput');
+    const name = input.value.trim();
+    if (/^[A-Za-z]+$/.test(name)) {
+        state.user.nickname = name;
+        state.user.onboardingDone = true;
+        saveState();
+        render(); // 將導向 Initial Book Selection
+    } else {
+        input.classList.add('animate-shake', 'border-red-500');
+        setTimeout(() => input.classList.remove('animate-shake', 'border-red-500'), 500);
+        alert("請只使用英文字母 (A-Z, a-z)");
+    }
+}
+
+// --- 初始教材選擇 (Initial Book Selection) ---
+function renderInitialBookSelection(container) {
+    container.innerHTML = `
+        <div class="h-full bg-slate-800 flex flex-col p-6 animate-fade-in">
+            <h1 class="text-2xl font-bold text-white mb-2 text-center mt-8">選擇你的第一本單字書</h1>
+            <p class="text-slate-400 text-center mb-8">就像挑選裝備一樣，選一本開始吧！</p>
+            
+            <div class="flex-1 overflow-y-auto pb-8">
+                <div class="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                    ${renderBookCard('GEPT_Elem', '全民英檢', '初級', 'bg-green-600')}
+                    ${renderBookCard('GEPT_Inter', '全民英檢', '中級', 'bg-blue-600')}
+                    ${renderBookCard('GEPT_High', '全民英檢', '中高級', 'bg-purple-600')}
+                    ${renderBookCard('Custom_World', '主題單字', '環遊世界', 'bg-pink-600')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderBookCard(id, series, level, colorClass) {
+    return `
+        <div onclick="selectBook('${id}')" class="cursor-pointer group relative active:scale-95 transition-transform duration-200">
+            <div class="${colorClass} aspect-[3/4] rounded-r-lg rounded-l-sm shadow-xl flex flex-col items-center justify-center p-3 text-center border-l-4 border-white/20">
+                <span class="text-white font-bold text-lg leading-tight mb-1">${series}</span>
+                <span class="text-white/80 text-sm bg-black/20 px-2 py-0.5 rounded-full">${level}</span>
+            </div>
+            <div class="absolute -bottom-2 w-full h-2 bg-black/30 rounded-full blur-sm"></div>
+        </div>
+    `;
+}
+
+function selectBook(id) {
+    state.currentBook = id;
+    state.activeTab = 'learn'; // 預設進入學習頁
+    saveState();
+    render();
+}
+
+// --- 主介面架構 (Main Layout) ---
+function renderMainLayout(container) {
+    container.innerHTML = `
+        <div class="flex flex-col h-full bg-slate-900 w-full">
+            <!-- 內容區域 -->
+            <div id="main-content" class="content-area relative w-full">
+                <!-- 動態注入各分頁內容 -->
+            </div>
+
+            <!-- 底部導覽列 (Bottom Navigation) -->
+            <div class="absolute bottom-0 left-0 w-full h-[80px] bg-slate-800 border-t border-slate-700 flex justify-around items-center pb-safe z-50 shadow-2xl">
+                ${renderNavItem('learn', '背單字', 'fa-brain')}
+                ${renderNavItem('books', '選擇教材', 'fa-book-open')}
+                ${renderNavItem('profile', '個人檔案', 'fa-user-astronaut')}
+            </div>
+        </div>
+    `;
+    renderActiveTab();
+}
+
+function renderNavItem(id, label, icon) {
+    const active = state.activeTab === id;
+    const color = active ? 'text-indigo-400' : 'text-slate-500';
+    // 點擊效果
+    return `
+        <button onclick="switchTab('${id}')" class="flex flex-col items-center justify-center w-full h-full pt-2 pb-4 ${color} active:bg-slate-700/50 transition-colors">
+            <i class="fas ${icon} text-2xl mb-1"></i>
+            <span class="text-[10px] font-medium">${label}</span>
+        </button>
+    `;
+}
+
+function switchTab(tab) {
+    state.activeTab = tab;
+    renderActiveTab();
+}
+
+function renderActiveTab() {
+    const content = document.getElementById('main-content');
+    content.innerHTML = '';
+    
+    if (state.activeTab === 'learn') renderLearnTab(content);
+    else if (state.activeTab === 'books') renderMaterialsTab(content);
+    else if (state.activeTab === 'profile') renderProfileTab(content);
+}
+
+// --- 1. 背單字分頁 (Learn Tab) ---
+function renderLearnTab(container) {
+    const bookInfo = getBookInfo(state.currentBook);
+    const lessons = getLessons(state.currentBook);
+    
+    let html = `
+        <div class="p-4 pt-8 pb-24 space-y-4 animate-fade-in min-h-full">
+            <!-- Header -->
+            <div class="mb-6">
+                <h1 class="text-3xl font-bold text-white mb-1">背單字</h1>
+                <div class="flex items-center text-slate-400 text-sm">
+                    <span class="w-2 h-2 rounded-full ${bookInfo.color} mr-2"></span>
+                    目前教材：${bookInfo.name}
+                </div>
+            </div>
+    `;
+
+    // SRS 複習提醒
+    const reviewWords = getSRSReviewWords();
+    if (reviewWords.length > 0) {
+        html += `
+            <div class="bg-gradient-to-r from-orange-600 to-red-600 rounded-2xl p-5 shadow-lg mb-6 text-white relative overflow-hidden">
+                <div class="relative z-10">
+                    <h3 class="text-lg font-bold mb-1"><i class="fas fa-fire mr-2"></i>複習時間！</h3>
+                    <p class="text-orange-100 text-sm mb-4">有 ${reviewWords.length} 個單字記憶正在衰退。</p>
+                    <div class="flex space-x-3">
+                        <button onclick="startReviewSession()" class="bg-white text-orange-600 px-4 py-2 rounded-lg font-bold text-sm shadow active:bg-gray-100 transition">開始複習</button>
+                        <button onclick="skipReview()" class="text-orange-200 text-sm underline pt-2">暫時跳過</button>
+                    </div>
+                </div>
+                <i class="fas fa-clock absolute -right-2 -bottom-4 text-8xl text-white/10"></i>
+            </div>
+        `;
+    }
+
+    if (lessons.length === 0) {
+        html += `<div class="text-center text-slate-500 mt-10">本教材目前沒有單字。</div>`;
+    } else {
+        html += `<div class="grid gap-3">`;
+        lessons.forEach((lesson, index) => {
+            const learnedCount = lesson.filter(w => state.progress[w.word]?.status === 'learned').length;
+            const total = lesson.length;
+            const percent = Math.round((learnedCount / total) * 100);
+            const isComplete = percent === 100;
+            const statusColor = isComplete ? 'text-green-400' : (learnedCount > 0 ? 'text-yellow-400' : 'text-slate-500');
+            const progressBarColor = isComplete ? 'bg-green-500' : 'bg-yellow-500';
+
+            html += `
+                <div onclick="openLessonPreview(${index})" class="glass rounded-xl p-4 flex items-center space-x-4 cursor-pointer active:scale-[0.98] transition-transform">
+                    <div class="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white border border-slate-600 shrink-0">
+                        ${index + 1}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex justify-between items-center mb-1">
+                            <h4 class="font-bold text-white truncate">第 ${index + 1} 單元</h4>
+                            <span class="text-xs font-mono ${statusColor} shrink-0">${learnedCount}/${total}</span>
+                        </div>
+                        <div class="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div class="h-full ${progressBarColor}" style="width: ${percent}%"></div>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-2 truncate w-full">${lesson.map(w => w.word).join(', ')}</p>
+                    </div>
+                    <i class="fas fa-chevron-right text-slate-600 shrink-0"></i>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+// 預覽課程畫面 (Lesson Preview)
+function openLessonPreview(lessonIndex) {
+    const lessons = getLessons(state.currentBook);
+    const lessonData = lessons[lessonIndex];
+    
+    // 使用全螢幕覆蓋
+    const content = document.getElementById('main-content');
+    content.innerHTML = `
+        <div class="h-full bg-slate-900 flex flex-col animate-slide-in pb-20">
+            <div class="p-6 overflow-y-auto flex-1">
+                <button onclick="renderActiveTab()" class="text-slate-400 mb-4 flex items-center"><i class="fas fa-arrow-left mr-2"></i> 返回列表</button>
+                <h2 class="text-3xl font-bold text-white mb-1">第 ${lessonIndex + 1} 單元</h2>
+                <p class="text-slate-400 mb-6">共 ${lessonData.length} 個單字</p>
+                
+                <button onclick="startLesson(${lessonIndex})" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-500/30 mb-8 active:scale-95 transition-transform flex items-center justify-center sticky top-0 z-10">
+                    <i class="fas fa-play mr-2"></i> 開始學習
+                </button>
+
+                <div class="space-y-3">
+                    ${lessonData.map(w => `
+                        <div class="flex items-center justify-between p-3 rounded-lg bg-slate-800 border border-slate-700">
+                            <div>
+                                <div class="font-bold text-indigo-300 text-lg">${w.word}</div>
+                                <div class="text-slate-400 text-sm">${w.definition_zh}</div>
+                            </div>
+                            <button onclick="event.stopPropagation(); speak('${w.word}')" class="w-8 h-8 rounded-full bg-slate-700 active:bg-indigo-500 text-white flex items-center justify-center transition">
+                                <i class="fas fa-volume-up text-xs"></i>
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// --- 2. 選擇教材分頁 (Materials Tab) ---
+function renderMaterialsTab(container) {
+    container.innerHTML = `
+        <div class="p-6 pt-8 space-y-6 animate-fade-in pb-24 h-full overflow-y-auto">
+            <h1 class="text-3xl font-bold text-white mb-4">選擇教材</h1>
+            
+            <!-- 內建教材 -->
+            <div>
+                <h3 class="text-slate-400 text-sm font-bold uppercase mb-3 ml-1">官方教材</h3>
+                <div class="space-y-3">
+                    ${renderMaterialItem('GEPT_Elem', '全民英檢 初級', '基礎單字庫', 'bg-green-600')}
+                    ${renderMaterialItem('GEPT_Inter', '全民英檢 中級', '進階單字庫', 'bg-blue-600')}
+                    ${renderMaterialItem('GEPT_High', '全民英檢 中高級', '高階單字庫', 'bg-purple-600')}
+                    ${renderMaterialItem('Custom_World', '單字環遊世界', '主題式學習', 'bg-pink-600')}
+                </div>
+            </div>
+
+            <!-- 自訂教材 -->
+            <div>
+                <div class="flex justify-between items-end mb-3 ml-1">
+                    <h3 class="text-slate-400 text-sm font-bold uppercase">自編教材</h3>
+                </div>
+                
+                <button onclick="showAddMaterialUI()" class="w-full mb-4 bg-slate-800/50 border-2 border-dashed border-slate-600 active:bg-slate-700 text-slate-400 p-4 rounded-xl transition flex items-center justify-center">
+                    <i class="fas fa-plus-circle mr-2"></i> 新增單字書
+                </button>
+
+                <div class="space-y-3">
+                    ${state.customBooks.length === 0 ? '<p class="text-slate-600 text-sm text-center italic">尚無自訂教材</p>' : ''}
+                    ${state.customBooks.map(b => renderCustomMaterialItem(b)).join('')}
+                </div>
+            </div>
+            
+            <a href="https://forms.gle/Le9oskkQBiupqwET7" target="_blank" class="block text-center text-xs text-indigo-400 mt-8 py-4 opacity-70">
+                <i class="fas fa-exclamation-circle mr-1"></i> 回報缺少單字
+            </a>
+        </div>
+    `;
+}
+
+function renderMaterialItem(id, title, subtitle, color) {
+    const isCurrent = state.currentBook === id;
+    const btnText = isCurrent ? '使用中' : '切換';
+    const btnClass = isCurrent ? 'bg-indigo-600 text-white cursor-default' : 'bg-slate-700 text-slate-300 active:bg-slate-600';
+    
+    return `
+        <div class="bg-slate-800 p-4 rounded-xl flex items-center justify-between border border-slate-700/50">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-lg ${color} flex items-center justify-center text-white shadow-lg">
+                    <i class="fas fa-book"></i>
+                </div>
+                <div>
+                    <div class="font-bold text-white">${title}</div>
+                    <div class="text-xs text-slate-500">${subtitle}</div>
+                </div>
+            </div>
+            <button onclick="${isCurrent ? '' : `selectBook('${id}')`}" class="px-4 py-2 rounded-lg text-xs font-bold transition-colors ${btnClass}">
+                ${btnText}
+            </button>
+        </div>
+    `;
+}
+
+function renderCustomMaterialItem(book) {
+    const isCurrent = state.currentBook === book.id;
+    
+    return `
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700/50">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-lg bg-teal-600 flex items-center justify-center text-white shadow-lg">
+                        <i class="fas fa-pen-fancy"></i>
+                    </div>
+                    <div>
+                        <div class="font-bold text-white">${book.name}</div>
+                        <div class="text-xs text-slate-500">${book.words.length} 個單字</div>
+                    </div>
+                </div>
+                ${isCurrent 
+                    ? '<span class="px-3 py-1 bg-indigo-600/20 text-indigo-400 rounded-full text-xs font-bold border border-indigo-600/30">使用中</span>' 
+                    : `<button onclick="selectBook('${book.id}')" class="px-4 py-2 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 active:bg-slate-600">切換</button>`
+                }
+            </div>
+            <div class="flex space-x-2 border-t border-slate-700/50 pt-3 mt-1">
+                <button onclick="editCustomBook('${book.id}')" class="flex-1 py-2 text-xs text-slate-400 hover:text-white bg-slate-900/50 rounded hover:bg-slate-700 transition">
+                    <i class="fas fa-edit mr-1"></i> 編輯內容
+                </button>
+                <button onclick="deleteBook('${book.id}')" class="flex-1 py-2 text-xs text-red-500/70 hover:text-red-400 bg-slate-900/50 rounded hover:bg-slate-700 transition">
+                    <i class="fas fa-trash mr-1"></i> 刪除
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+// --- 新增/編輯教材 UI ---
+let editingBookId = null; // 用來追蹤是新增還是編輯
+
+function showAddMaterialUI() {
+    editingBookId = null;
+    window.tempNewBookWords = [];
+    renderEditorUI("新增單字書", "", []);
+}
+
+function editCustomBook(id) {
+    editingBookId = id;
+    const book = state.customBooks.find(b => b.id === id);
+    if (!book) return;
+    
+    // 複製單字陣列以供編輯
+    window.tempNewBookWords = [...book.words];
+    renderEditorUI("編輯單字書", book.name, window.tempNewBookWords);
+}
+
+function renderEditorUI(title, defaultName, words) {
+    const content = document.getElementById('main-content');
+    content.innerHTML = `
+        <div class="h-full bg-slate-900 flex flex-col animate-slide-in pb-24 z-50 absolute inset-0">
+            <div class="p-6 flex flex-col h-full">
+                <div class="flex items-center mb-6">
+                    <button onclick="renderActiveTab()" class="text-slate-400 mr-4"><i class="fas fa-arrow-left"></i></button>
+                    <h2 class="text-2xl font-bold text-white">${title}</h2>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto space-y-6">
+                    <div>
+                        <label class="block text-slate-400 text-sm mb-2">單字書名稱</label>
+                        <input type="text" id="new-book-name" value="${defaultName}" class="w-full bg-slate-800 border border-slate-700 text-white p-3 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="例如：我的易錯單字">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-slate-400 text-sm mb-2">加入單字</label>
+                        <div class="flex space-x-2 mb-2">
+                            <input type="text" id="word-search" class="flex-1 bg-slate-800 border border-slate-700 text-white p-3 rounded-xl outline-none" placeholder="輸入英文單字查詢...">
+                            <button onclick="searchAndAddWord()" class="bg-indigo-600 text-white px-5 rounded-xl active:bg-indigo-700"><i class="fas fa-plus"></i></button>
+                        </div>
+                        <p id="search-error" class="text-red-500 text-xs hidden flex items-center mt-1"><i class="fas fa-times-circle mr-1"></i> 資料庫中找不到此單字。</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-slate-400 text-sm mb-2">已收錄單字 (${words.length})</label>
+                        <div id="added-words-list" class="flex flex-wrap gap-2 min-h-[100px] bg-slate-800/30 p-3 rounded-xl border border-dashed border-slate-700">
+                            <!-- Tags will be injected here -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-4">
+                     <button onclick="saveBookChange()" class="bg-green-600 text-white w-full py-4 rounded-xl font-bold shadow-lg active:scale-95 transition-transform">儲存變更</button>
+                </div>
+            </div>
+        </div>
+    `;
+    renderAddedWords(); // Initial render
+}
+
+function searchAndAddWord() {
+    const input = document.getElementById('word-search');
+    const errorMsg = document.getElementById('search-error');
+    const query = input.value.trim().toLowerCase();
+    
+    if (!query) return;
+
+    // 比對完整單字 (Case insensitive)
+    const exists = state.vocabulary.find(w => w.word.toLowerCase() === query);
+    
+    if (exists) {
+        if (!window.tempNewBookWords.includes(exists.word)) {
+            window.tempNewBookWords.push(exists.word);
+            renderAddedWords();
+        } else {
+            alert("該單字已在列表中！");
+        }
+        input.value = '';
+        errorMsg.classList.add('hidden');
+        input.focus();
+    } else {
+        errorMsg.classList.remove('hidden');
+    }
+}
+
+function renderAddedWords() {
+    const list = document.getElementById('added-words-list');
+    if (window.tempNewBookWords.length === 0) {
+        list.innerHTML = '<span class="text-slate-500 text-sm w-full text-center py-4">目前列表是空的</span>';
+        return;
+    }
+    list.innerHTML = window.tempNewBookWords.map(w => `
+        <span class="bg-indigo-900/50 border border-indigo-500/30 text-indigo-200 pl-3 pr-2 py-1.5 rounded-full text-sm flex items-center">
+            ${w}
+            <button onclick="removeTempWord('${w}')" class="ml-2 w-5 h-5 rounded-full bg-indigo-500/20 hover:bg-indigo-500 text-indigo-300 hover:text-white flex items-center justify-center transition">
+                <i class="fas fa-times text-xs"></i>
+            </button>
+        </span>
+    `).join('');
+}
+
+function removeTempWord(word) {
+    window.tempNewBookWords = window.tempNewBookWords.filter(w => w !== word);
+    renderAddedWords();
+}
+
+function saveBookChange() {
+    const nameInput = document.getElementById('new-book-name');
+    const name = nameInput.value.trim();
+    
+    if (!name) {
+        alert("請輸入單字書名稱");
+        return;
+    }
+    if (window.tempNewBookWords.length === 0) {
+        alert("請至少加入一個單字");
+        return;
+    }
+    
+    if (editingBookId) {
+        // 更新現有
+        const bookIndex = state.customBooks.findIndex(b => b.id === editingBookId);
+        if (bookIndex > -1) {
+            state.customBooks[bookIndex].name = name;
+            state.customBooks[bookIndex].words = window.tempNewBookWords;
+        }
+    } else {
+        // 新增
+        const newBook = {
+            id: 'custom_' + Date.now(),
+            name: name,
+            words: window.tempNewBookWords
+        };
+        state.customBooks.push(newBook);
+    }
+    
+    saveState();
+    renderActiveTab(); // 返回列表
+}
+
+function deleteBook(id) {
+    if(confirm("確定要刪除這本單字書嗎？")) {
+        // 若刪除的是當前正在使用的書，將 currentBook 設為 null
+        if (state.currentBook === id) {
+            state.currentBook = null;
+        }
+        state.customBooks = state.customBooks.filter(b => b.id !== id);
+        saveState();
+        
+        // 如果 currentBook 被清除了，需要重新導向
+        if (!state.currentBook) {
+            render(); // 會回到初始選擇頁面
+        } else {
+            renderActiveTab();
+        }
+    }
+}
+
+// --- 3. 個人檔案分頁 (Profile Tab) ---
+function renderProfileTab(container) {
+    const totalLearned = Object.values(state.progress).filter(p => p.status === 'learned').length;
+    // 這裡只是模擬 streak
+    const streak = 3; 
+
+    container.innerHTML = `
+        <div class="p-6 pt-8 pb-24 h-full overflow-y-auto animate-fade-in">
+            <!-- Header -->
+            <div class="flex items-center space-x-4 mb-8">
+                <div class="w-20 h-20 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-3xl font-bold text-white shadow-lg border-2 border-white/20">
+                    ${state.user.nickname ? state.user.nickname.charAt(0).toUpperCase() : '?'}
+                </div>
+                <div>
+                    <h2 class="text-2xl font-bold text-white">${state.user.nickname || 'Guest'}</h2>
+                    <p class="text-slate-400 text-sm">單字探險家</p>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-2 gap-4 mb-8">
+                <div class="bg-slate-800 p-4 rounded-xl text-center border border-slate-700/50">
+                    <div class="text-3xl font-bold text-indigo-400">${totalLearned}</div>
+                    <div class="text-xs text-slate-500 mt-1">已學會單字</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-xl text-center border border-slate-700/50">
+                    <div class="text-3xl font-bold text-green-400">${streak}</div>
+                    <div class="text-xs text-slate-500 mt-1">連續學習天數</div>
+                </div>
+            </div>
+
+            <!-- Settings -->
+            <div class="space-y-3">
+                <h3 class="text-slate-500 text-sm font-bold uppercase mb-2 ml-1">設定</h3>
+                
+                <div class="bg-slate-800 px-4 py-3 rounded-xl flex justify-between items-center border border-slate-700/50">
+                    <span class="text-white">每日提醒</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" class="sr-only peer" ${state.user.settings.notifications ? 'checked' : ''} onchange="toggleSetting('notifications')">
+                        <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                </div>
+
+                 <div class="bg-slate-800 px-4 py-3 rounded-xl flex justify-between items-center border border-slate-700/50">
+                    <span class="text-white">音效</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" class="sr-only peer" ${state.user.settings.sound ? 'checked' : ''} onchange="toggleSetting('sound')">
+                        <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                </div>
+                
+                <div class="bg-slate-800 px-4 py-3 rounded-xl border border-slate-700/50">
+                    <div class="flex justify-between mb-2">
+                        <span class="text-white">發音速度</span>
+                        <span id="rate-display" class="text-indigo-400 font-mono">${state.user.settings.speechRate || 1.0}x</span>
+                    </div>
+                    <input type="range" min="0.5" max="1.5" step="0.1" value="${state.user.settings.speechRate || 1.0}" class="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-indigo-500" oninput="updateRate(this.value)">
+                </div>
+
+                <button onclick="showAllWords()" class="w-full text-left bg-slate-800 px-4 py-3 rounded-xl flex justify-between items-center active:bg-slate-700 border border-slate-700/50">
+                    <span class="text-white">查看收錄單字列表</span>
+                    <i class="fas fa-chevron-right text-slate-500"></i>
+                </button>
+
+                <a href="mailto:mail@peterkuo.run.place" class="block w-full text-left bg-slate-800 px-4 py-3 rounded-xl flex justify-between items-center active:bg-slate-700 border border-slate-700/50">
+                    <span class="text-white">聯絡我們</span>
+                    <i class="fas fa-envelope text-slate-500"></i>
+                </a>
+            </div>
+
+            <div class="mt-8 text-center text-slate-600 text-xs">
+                Word Voyager v${APP_VERSION}
+            </div>
+        </div>
+    `;
+}
+
+function toggleSetting(key) {
+    state.user.settings[key] = !state.user.settings[key];
+    saveState();
+}
+function updateRate(val) {
+    state.user.settings.speechRate = parseFloat(val);
+    document.getElementById('rate-display').innerText = val + 'x';
+    saveState();
+}
+function showAllWords() {
+    const content = document.getElementById('main-content');
+    content.innerHTML = `
+        <div class="h-full bg-slate-900 flex flex-col animate-slide-in pb-20 z-50 absolute inset-0">
+            <div class="p-4 border-b border-slate-800 flex items-center bg-slate-900 sticky top-0">
+                 <button onclick="renderActiveTab()" class="text-slate-400 mr-4"><i class="fas fa-arrow-left"></i></button>
+                 <h2 class="font-bold text-white">所有單字 (${state.vocabulary.length})</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-2">
+                ${state.vocabulary.map(w => `
+                    <div class="p-3 bg-slate-800/50 rounded-lg flex justify-between items-center">
+                        <div>
+                            <div class="text-indigo-300 font-bold">${w.word}</div>
+                            <div class="text-slate-500 text-xs">${w.part_of_speech}</div>
+                        </div>
+                        <span class="text-slate-400 text-sm truncate max-w-[50%] text-right">${w.definition_zh}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * ------------------------------------------------------------------
+ * 4. 學習模式邏輯 (STUDY FLOW LOGIC)
+ * ------------------------------------------------------------------
+ */
+
+function startReviewSession() {
+    state.session.queue = getSRSReviewWords();
+    state.session.isReviewingSRS = true;
+    startStudyFlow();
+}
+
+function skipReview() {
+    // 重新渲染當前頁面以隱藏提示
+    const btn = document.querySelector('.bg-gradient-to-r');
+    if(btn) btn.style.display = 'none';
+}
+
+function startLesson(lessonIndex) {
+    const lessons = getLessons(state.currentBook);
+    state.session.queue = [...lessons[lessonIndex]];
+    state.session.isReviewingSRS = false;
+    startStudyFlow();
+}
+
+function startStudyFlow() {
+    state.session.currentIndex = 0;
+    state.session.mode = 'card';
+    state.session.reviewQueue = [];
+    renderStudyScreen();
+}
+
+function renderStudyScreen() {
+    const content = document.getElementById('main-content');
+    const wordObj = state.session.queue[state.session.currentIndex];
+    
+    // 佇列結束處理
+    if (!wordObj) {
+        // 模式切換邏輯
+        const modes = ['card', 'sentence', 'match', 'spell', 'review'];
+        const currentModeIdx = modes.indexOf(state.session.mode);
+        
+        if (currentModeIdx < modes.length - 1) {
+            state.session.mode = modes[currentModeIdx + 1];
+            state.session.currentIndex = 0;
+            
+            // 跳過無例句的 sentence 模式 (防呆)
+            if (state.session.mode === 'sentence' && !state.session.queue.some(w => w.example_en)) {
+                state.session.currentIndex = state.session.queue.length; // Skip
+                renderStudyScreen();
+                return;
+            }
+            
+            renderStudyScreen();
+        } else {
+            // 所有模式結束，檢查 ReviewQueue (紅燈/黃燈單字)
+            if (state.session.reviewQueue.length > 0) {
+                state.session.queue = [...state.session.reviewQueue];
+                state.session.reviewQueue = [];
+                state.session.mode = 'card'; // 重頭開始跑所有模式給這些不熟的單字
+                state.session.currentIndex = 0;
+                
+                // 顯示提醒
+                content.innerHTML = `
+                    <div class="h-full flex flex-col items-center justify-center bg-slate-900 animate-fade-in text-center p-8">
+                        <i class="fas fa-sync-alt text-5xl text-yellow-400 mb-6 animate-spin-slow"></i>
+                        <h2 class="text-2xl font-bold text-white mb-2">加強練習</h2>
+                        <p class="text-slate-400 mb-8">讓我們再複習一次剛才不熟的單字。</p>
+                        <button onclick="renderStudyScreen()" class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold">繼續</button>
+                    </div>
+                `;
+            } else {
+                finishLesson();
+            }
+        }
+        return;
+    }
+
+    // 渲染特定模式
+    let modeHtml = '';
+    const progressText = `${state.session.currentIndex + 1} / ${state.session.queue.length}`;
+    
+    // 標題與說明
+    let modeTitle = '';
+    switch(state.session.mode) {
+        case 'card': modeTitle = '單字卡'; break;
+        case 'sentence': modeTitle = '例句重組'; break;
+        case 'match': modeTitle = '單字配對'; break;
+        case 'spell': modeTitle = '聽寫練習'; break;
+        case 'review': modeTitle = '總複習'; break;
+    }
+
+    if (state.session.mode === 'card') modeHtml = renderFlashcard(wordObj);
+    else if (state.session.mode === 'sentence') modeHtml = renderSentenceBuilder(wordObj);
+    else if (state.session.mode === 'match') modeHtml = renderMatching(wordObj);
+    else if (state.session.mode === 'spell') modeHtml = renderSpelling(wordObj);
+    else if (state.session.mode === 'review') modeHtml = renderReview(wordObj);
+
+    content.innerHTML = `
+        <div class="h-full flex flex-col bg-slate-900 animate-fade-in relative z-50 absolute inset-0 pb-safe">
+            <!-- Study Header -->
+            <div class="px-4 py-3 flex justify-between items-center bg-slate-800 shadow-md">
+                <button onclick="quitLesson()" class="text-slate-400 p-2"><i class="fas fa-times"></i></button>
+                <div class="text-slate-200 font-bold text-sm">${modeTitle} ${progressText}</div>
+                <div class="w-8"></div>
+            </div>
+            
+            <!-- Game Area -->
+            <div class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+                ${modeHtml}
+            </div>
+        </div>
+    `;
+
+    // 聽寫模式自動聚焦
+    if (state.session.mode === 'spell') {
+        setTimeout(() => {
+            const inp = document.getElementById('spell-input');
+            if (inp) {
+                inp.focus();
+                // 確保鍵盤彈出時可見
+                inp.scrollIntoView({behavior: "smooth", block: "center"});
+            }
+        }, 300);
+    }
+}
+
+// 1. 單字卡 (Flashcard)
+function renderFlashcard(word) {
+    return `
+        <div class="w-full max-w-sm aspect-[3/4] relative perspective-1000 group cursor-pointer" onclick="this.querySelector('.card-inner').classList.toggle('rotate-y-180')">
+            <div class="card-inner w-full h-full transition-transform duration-500 transform-style-3d relative">
+                
+                <!-- 正面 -->
+                <div class="absolute w-full h-full backface-hidden bg-gradient-to-br from-indigo-600 to-blue-700 rounded-2xl shadow-2xl flex flex-col items-center justify-center p-4 text-center border border-white/10">
+                    <h2 class="text-4xl font-bold text-white break-words w-full">${word.word}</h2>
+                    <div class="absolute bottom-6 text-white/50 text-sm animate-pulse">點擊翻面</div>
+                </div>
+
+                <!-- 背面 -->
+                <div class="absolute w-full h-full backface-hidden rotate-y-180 bg-white rounded-2xl shadow-2xl p-6 flex flex-col items-center justify-center text-slate-800 border-4 border-indigo-100">
+                    <div class="inline-block px-3 py-1 bg-indigo-100 text-indigo-600 rounded-full text-xs font-bold mb-4">${word.part_of_speech || '單字'}</div>
+                    <div class="text-3xl font-bold mb-8 text-center text-slate-900">${word.definition_zh}</div>
+                    
+                    <button onclick="event.stopPropagation(); speak('${word.word}')" class="w-16 h-16 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl active:bg-indigo-200 mb-6 shadow-inner ring-1 ring-indigo-200">
+                        <i class="fas fa-volume-up"></i>
+                    </button>
+                    
+                    ${word.example_en ? `<div class="text-center text-sm text-slate-500 italic mt-auto border-t border-slate-100 pt-4 w-full">"${word.example_en}"</div>` : ''}
+                </div>
+            </div>
+        </div>
+        <button onclick="nextStep()" class="mt-8 bg-slate-700 active:bg-slate-600 text-white px-10 py-3 rounded-full font-bold transition shadow-lg w-full max-w-xs">下一個 <i class="fas fa-arrow-right ml-2"></i></button>
+    `;
+}
+
+// 2. 例句重組 (Sentence Builder)
+function renderSentenceBuilder(word) {
+    if (!word.example_en) return `<div class="text-white">此單字無例句</div><button onclick="nextStep()" class="mt-4 bg-indigo-600 px-4 py-2 rounded">跳過</button>`;
+
+    // 移除標點符號並打亂
+    const cleanSentence = word.example_en.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+    const sentenceParts = cleanSentence.split(/\s+/);
+    const shuffledParts = [...sentenceParts].sort(() => Math.random() - 0.5);
+
+    window.currentSentenceTarget = sentenceParts;
+    setTimeout(initDragDrop, 100);
+
+    return `
+        <div class="w-full max-w-md flex flex-col h-full justify-center">
+            <div class="text-center mb-8">
+                <div class="text-sm text-indigo-400 mb-2 font-bold tracking-wider uppercase">請重組例句</div>
+                <div class="text-xl text-white font-medium leading-relaxed">${word.example_zh}</div>
+            </div>
+
+            <!-- 放置區 -->
+            <div id="drop-zone" class="min-h-[80px] bg-slate-800/50 border-2 border-dashed border-slate-600 rounded-xl p-3 flex flex-wrap gap-2 justify-center mb-8 transition-colors content-start">
+                <!-- Dropped items -->
+            </div>
+
+            <!-- 選字區 -->
+            <div id="source-zone" class="flex flex-wrap gap-2 justify-center mb-auto">
+                ${shuffledParts.map((part) => `
+                    <div class="draggable-word bg-indigo-600 text-white px-4 py-2 rounded-lg shadow-md text-lg active:scale-95 transition-transform select-none cursor-pointer" 
+                         data-word="${part}">${part}</div>
+                `).join('')}
+            </div>
+            
+             <button id="check-sentence-btn" onclick="checkSentence()" class="w-full mt-4 bg-slate-700 text-slate-400 font-bold py-4 rounded-xl transition pointer-events-none opacity-50 shadow-lg">檢查答案</button>
+        </div>
+    `;
+}
+
+// 3. 配對 (Matching)
+function renderMatching(word) {
+    const allWords = state.vocabulary;
+    let distractors = [];
+    // 嘗試找同詞性或同長度的干擾項
+    const candidates = allWords.filter(w => w.word !== word.word);
+    
+    while (distractors.length < 2 && candidates.length > 0) {
+        const idx = Math.floor(Math.random() * candidates.length);
+        distractors.push(candidates[idx]);
+        candidates.splice(idx, 1);
+    }
+    
+    const options = [word, ...distractors].sort(() => Math.random() - 0.5);
+
+    return `
+        <div class="w-full max-w-sm">
+            <h2 class="text-4xl font-bold text-center text-white mb-10 animate-float drop-shadow-lg">${word.word}</h2>
+            <div class="space-y-4">
+                ${options.map(opt => `
+                    <button onclick="handleMatch('${opt.word}', '${word.word}', this)" class="w-full p-5 bg-slate-800 active:bg-slate-700 text-white rounded-xl border border-slate-700 shadow-md text-lg font-medium transition-all text-left flex items-center">
+                        <span class="w-6 h-6 rounded-full border border-slate-500 mr-3 flex-shrink-0"></span>
+                        ${opt.definition_zh}
+                    </button>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+// 4. 聽寫 (Spelling)
+function renderSpelling(word) {
+    return `
+        <div class="w-full max-w-sm flex flex-col items-center">
+            <button onclick="speak('${word.word}')" class="w-24 h-24 rounded-full bg-indigo-500 text-white text-4xl flex items-center justify-center mb-10 shadow-lg shadow-indigo-500/40 animate-pulse active:scale-95 transition-transform">
+                <i class="fas fa-volume-up"></i>
+            </button>
+            
+            <div class="text-slate-400 mb-4 text-sm font-bold tracking-widest">請輸入聽到的單字</div>
+            
+            <input type="text" id="spell-input" 
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                class="w-full bg-transparent border-b-2 border-slate-600 text-center text-4xl text-white py-3 focus:outline-none focus:border-indigo-500 mb-12 font-mono tracking-widest transition-colors placeholder-slate-700" placeholder="Type here" />
+
+            <div class="flex space-x-4 w-full">
+                <button onclick="checkSpelling('${word.word}')" class="flex-1 bg-green-600 active:bg-green-700 text-white py-4 rounded-xl font-bold shadow-lg text-lg">檢查</button>
+                <button onclick="showSpellingHint('${word.word}')" class="px-6 bg-slate-700 active:bg-slate-600 text-slate-300 rounded-xl font-bold">提示</button>
+            </div>
+        </div>
+    `;
+}
+
+// 5. 總複習 (Review)
+function renderReview(word) {
+    return `
+        <div class="w-full max-w-sm text-center flex flex-col h-full justify-center">
+            <div class="mb-10">
+                <h2 class="text-4xl font-bold text-white mb-4">${word.word}</h2>
+                <div class="w-16 h-1 bg-indigo-500 mx-auto rounded-full mb-6"></div>
+                <p class="text-indigo-200 text-2xl font-medium">${word.definition_zh}</p>
+            </div>
+            
+            <p class="text-slate-400 mb-6 text-sm">你對這個單字的掌握程度？</p>
+            
+            <div class="grid grid-cols-1 gap-4 w-full">
+                <button onclick="rateWord('${word.word}', 'green')" class="p-4 bg-green-600/20 border-2 border-green-600/50 text-green-400 rounded-xl active:bg-green-600 active:text-white transition flex items-center justify-center space-x-3">
+                    <i class="fas fa-smile text-2xl"></i>
+                    <span class="font-bold">我很熟</span>
+                </button>
+                <button onclick="rateWord('${word.word}', 'yellow')" class="p-4 bg-yellow-600/20 border-2 border-yellow-600/50 text-yellow-400 rounded-xl active:bg-yellow-600 active:text-white transition flex items-center justify-center space-x-3">
+                    <i class="fas fa-meh text-2xl"></i>
+                    <span class="font-bold">有點印象</span>
+                </button>
+                <button onclick="rateWord('${word.word}', 'red')" class="p-4 bg-red-600/20 border-2 border-red-600/50 text-red-400 rounded-xl active:bg-red-600 active:text-white transition flex items-center justify-center space-x-3">
+                    <i class="fas fa-frown text-2xl"></i>
+                    <span class="font-bold">我不會</span>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+// --- 互動輔助函數 ---
+
+function nextStep() {
+    state.session.currentIndex++;
+    renderStudyScreen();
+}
+
+function quitLesson() {
+    if(confirm("確定要退出嗎？本次進度將不會保存。")) {
+        renderActiveTab();
+    }
+}
+
+function handleMatch(selected, correct, btnElement) {
+    // 移除所有按鈕點擊狀態
+    const allBtns = btnElement.parentElement.children;
+    for(let b of allBtns) b.classList.add('pointer-events-none');
+
+    if (selected === correct) {
+        playSound('correct');
+        btnElement.className = "w-full p-5 bg-green-600 text-white rounded-xl border border-green-500 shadow-md text-lg font-medium transition-all text-left flex items-center";
+        btnElement.querySelector('span').innerHTML = '<i class="fas fa-check text-xs"></i>';
+        btnElement.querySelector('span').className = "w-6 h-6 rounded-full bg-white text-green-600 mr-3 flex items-center justify-center flex-shrink-0";
+        setTimeout(nextStep, 600);
+    } else {
+        playSound('wrong');
+        btnElement.classList.add('animate-shake', 'bg-red-600', 'border-red-500');
+        setTimeout(() => {
+            // 讓正確答案亮起來
+            for(let b of allBtns) {
+                if(b.innerText.includes(state.vocabulary.find(w=>w.word===correct).definition_zh)) {
+                    b.classList.add('bg-green-600/50', 'border-green-500');
+                }
+            }
+            setTimeout(nextStep, 1500);
+        }, 500);
+    }
+}
+
+function checkSpelling(correctWord) {
+    const input = document.getElementById('spell-input');
+    const val = input.value.trim().toLowerCase();
+    
+    if (val === correctWord.toLowerCase()) {
+        playSound('correct');
+        input.classList.add('text-green-400', 'border-green-500');
+        setTimeout(nextStep, 600);
+    } else {
+        playSound('wrong');
+        input.classList.add('border-red-500', 'animate-shake', 'text-red-400');
+        setTimeout(() => input.classList.remove('border-red-500', 'animate-shake', 'text-red-400'), 500);
+    }
+}
+
+function showSpellingHint(word) {
+    const input = document.getElementById('spell-input');
+    input.value = word.substring(0, 2) + "...";
+    input.focus();
+}
+
+function rateWord(wordText, rating) {
+    updateWordProgress(wordText, rating);
+    
+    if (rating === 'red' || rating === 'yellow') {
+        if (!state.session.isReviewingSRS) {
+            const currentWord = state.session.queue[state.session.currentIndex];
+            if (!state.session.reviewQueue.includes(currentWord)) {
+                state.session.reviewQueue.push(currentWord);
+            }
+        }
+    }
+    nextStep();
+}
+
+function finishLesson() {
+    playSound('complete');
+    // 如果不是SRS複習模式，將這些單字標記為已學過
+    if (!state.session.isReviewingSRS) {
+        state.session.queue.forEach(w => {
+            if (!state.progress[w.word]) {
+                state.progress[w.word] = { status: 'learned', level: 1, nextReview: Date.now() + 86400000, streak: 1 };
+            }
+        });
+        saveState();
+    }
+
+    const content = document.getElementById('main-content');
+    content.innerHTML = `
+        <div class="h-full flex flex-col items-center justify-center animate-fade-in bg-slate-900 text-center p-6 pb-20">
+            <div class="relative mb-8">
+                <i class="fas fa-certificate text-8xl text-indigo-600 absolute blur-lg opacity-50"></i>
+                <i class="fas fa-trophy text-7xl text-yellow-400 relative z-10 animate-float"></i>
+            </div>
+            
+            <h2 class="text-3xl font-bold text-white mb-2">單元完成！</h2>
+            <p class="text-slate-400 mb-10">做得好，${state.user.nickname}！你的英語能力又提升了。</p>
+            
+            <button onclick="renderActiveTab()" class="bg-indigo-600 hover:bg-indigo-500 text-white w-full max-w-xs py-4 rounded-xl font-bold shadow-lg active:scale-95 transition-transform">
+                返回選單
+            </button>
+        </div>
+    `;
+}
+
+// 拖放邏輯 (Click-based for better mobile support)
+function initDragDrop() {
+    const source = document.getElementById('source-zone');
+    const drop = document.getElementById('drop-zone');
+    const btn = document.getElementById('check-sentence-btn');
+    
+    document.querySelectorAll('.draggable-word').forEach(el => {
+        el.onclick = function() {
+            if (el.parentElement === source) {
+                drop.appendChild(el);
+            } else {
+                source.appendChild(el);
+            }
+            
+            // 檢查按鈕狀態
+            if (drop.children.length > 0) {
+                btn.classList.remove('opacity-50', 'pointer-events-none');
+                btn.classList.add('bg-indigo-600', 'text-white');
+                btn.classList.remove('bg-slate-700', 'text-slate-400');
+            } else {
+                btn.classList.add('opacity-50', 'pointer-events-none');
+                btn.classList.remove('bg-indigo-600', 'text-white');
+                btn.classList.add('bg-slate-700', 'text-slate-400');
+            }
+        };
+    });
+}
+
+function checkSentence() {
+    const drop = document.getElementById('drop-zone');
+    const currentWords = Array.from(drop.children).map(el => el.getAttribute('data-word'));
+    // 簡單寬鬆比對 (忽略大小寫)
+    const target = window.currentSentenceTarget.map(w => w.toLowerCase());
+    const current = currentWords.map(w => w.toLowerCase());
+    
+    if (JSON.stringify(current) === JSON.stringify(target)) {
+        playSound('correct');
+        drop.classList.add('border-green-500', 'bg-green-500/20');
+        setTimeout(nextStep, 1000);
+    } else {
+        playSound('wrong');
+        drop.classList.add('border-red-500', 'bg-red-500/20', 'animate-shake');
+        setTimeout(() => drop.classList.remove('border-red-500', 'bg-red-500/20', 'animate-shake'), 500);
+    }
+}
+
+// 啟動
+window.onload = initApp;
+
+</script>
+</body>
+</html>
