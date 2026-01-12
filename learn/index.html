@@ -28,7 +28,7 @@
             user-select: none;
         }
         
-        /* Glassmorphism */
+        /* Glassmorphism Panel */
         .glass-panel {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(20px);
@@ -122,7 +122,7 @@ const state = {
     activeTab: 'learn',
     vocabulary: [],
     progress: {}, 
-    // New Session Structure
+    // Session State for Learning Flow
     session: { 
         originalQueue: [], // The lesson words
         reviewQueue: [],   // SRS review words
@@ -146,7 +146,7 @@ const sounds = {
 
 // --- Init ---
 async function initApp() {
-    const savedUser = localStorage.getItem('wv_user_v11'); 
+    const savedUser = localStorage.getItem('wv_user_v12'); // Version bump
     
     try {
         const response = await fetch(DB_URL);
@@ -182,6 +182,34 @@ function setLoading(isLoading, text = "載入中...") {
     }
 }
 
+// --- Helper: Robust Data Fetching (Fixes Blank Screens) ---
+function getBookWords(id) {
+    if (!id) return [];
+    let words = [];
+    if (id === 'GEPT_Elem') words = state.vocabulary.filter(w => w.category && w.category.includes('初級'));
+    else if (id === 'GEPT_Inter') words = state.vocabulary.filter(w => w.category && w.category.includes('中級') && !w.category.includes('高級'));
+    else if (id === 'GEPT_High') words = state.vocabulary.filter(w => w.category && w.category.includes('中高級'));
+    else if (id === 'Custom_World') words = [...state.vocabulary];
+    else {
+        const book = state.customBooks.find(b => b.id === id);
+        if (book && book.words) {
+            // Only keep words that exist in vocabulary
+            words = state.vocabulary.filter(w => book.words.includes(w.word));
+        }
+    }
+    // Return empty array instead of crashing if undefined
+    return words || [];
+}
+
+function getBookName(id) {
+    if(id==='GEPT_Elem') return '全民英檢初級';
+    if(id==='GEPT_Inter') return '全民英檢中級';
+    if(id==='GEPT_High') return '全民英檢中高級';
+    if(id==='Custom_World') return '單字環遊世界';
+    const c = state.customBooks.find(b=>b.id===id);
+    return c ? c.name : '未知教材';
+}
+
 // --- Auth UI ---
 function renderLogin() {
     document.getElementById('app').innerHTML = `
@@ -201,7 +229,7 @@ function renderLogin() {
                     <button onclick="renderRegister()" class="btn-pill-secondary">註冊新帳號</button>
                 </div>
             </div>
-            <div class="mt-8 text-indigo-900/40 text-xs font-bold tracking-widest">V11.0</div>
+            <div class="mt-8 text-indigo-900/40 text-xs font-bold tracking-widest">V12.0 Stable</div>
         </div>`;
 }
 
@@ -330,12 +358,14 @@ function renderActiveTab() {
     else if (state.activeTab === 'profile') renderProfileTab(content);
 }
 
-// --- BOOK EDITOR ---
+// --- BOOK EDITOR (FIXED) ---
 function openBookEditor(bookId) {
     if (bookId) {
         const book = state.customBooks.find(b => b.id === bookId);
+        // Deep copy to prevent reference issues
         state.tempBook = { id: book.id, name: book.name, words: [...book.words] }; 
     } else {
+        // Explicit initialization for new book
         state.tempBook = { id: null, name: "", words: [] };
     }
     renderBookEditor();
@@ -380,7 +410,7 @@ function saveBook() {
 }
 function deleteBook(id) { if (!confirm("無法復原，確定刪除？")) return; state.customBooks = state.customBooks.filter(b => b.id !== id); if(state.user.currentBook===id) state.user.currentBook=null; saveState(); renderMaterialsTab(document.getElementById('main-content')); }
 
-// --- TABS & COURSE FLOW ---
+// --- TABS ---
 
 function renderMaterialsTab(c) {
     c.innerHTML = `
@@ -413,20 +443,15 @@ function renderProfileTab(c) {
                 <a href="mailto:mail@peterkuo.run.place" class="w-full bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-100 shadow-sm active:bg-slate-50 transition-colors group"><span class="font-bold text-slate-700">聯絡我們</span><i class="fas fa-envelope text-slate-300 group-hover:text-indigo-500 transition-colors text-xl"></i></a>
                 <button onclick="logout()" class="w-full bg-white p-4 rounded-2xl flex justify-between items-center border border-red-100 shadow-sm active:bg-red-50 transition-colors group"><span class="font-bold text-red-500">登出帳號</span><i class="fas fa-sign-out-alt text-red-300 group-hover:text-red-500 transition-colors text-xl"></i></button>
             </div>
-            <div class="text-center text-xs text-slate-300 mt-8 font-bold tracking-widest">V11.2</div>
+            <div class="text-center text-xs text-slate-300 mt-8 font-bold tracking-widest">V12.2</div>
         </div>`;
 }
 function toggleNotif(c) { updateSetting('notifications', c); document.getElementById('time-picker-box').classList.toggle('hidden', !c); }
 function updateSetting(k, v) { if(!state.user.settings) state.user.settings={}; state.user.settings[k]=v; saveState(); }
 
 function renderLearnTab(c) {
-    let words = [];
     const bookId = state.user.currentBook;
-    if (bookId === 'GEPT_Elem') words = state.vocabulary.filter(w => w.category && w.category.includes('初級'));
-    else if (bookId === 'GEPT_Inter') words = state.vocabulary.filter(w => w.category && w.category.includes('中級') && !w.category.includes('高級'));
-    else if (bookId === 'GEPT_High') words = state.vocabulary.filter(w => w.category && w.category.includes('中高級'));
-    else if (bookId === 'Custom_World') words = [...state.vocabulary];
-    else { const cb = state.customBooks.find(b => b.id === bookId); if(cb) words = state.vocabulary.filter(w => cb.words.includes(w.word)); }
+    const words = getBookWords(bookId); // Use fail-safe helper
     const lessons = []; for (let i = 0; i < words.length; i += 7) lessons.push(words.slice(i, i + 7));
 
     let html = `
@@ -445,12 +470,7 @@ function renderLearnTab(c) {
 }
 
 function openLessonPreview(idx) {
-    let words = [];
-    const bookId = state.user.currentBook;
-    if (bookId.includes('GEPT')) words = getBookWords(bookId);
-    else if (bookId === 'Custom_World') words = [...state.vocabulary];
-    else { const cb = state.customBooks.find(b => b.id === bookId); words = state.vocabulary.filter(w => cb.words.includes(w.word)); }
-    
+    const words = getBookWords(state.user.currentBook);
     const lessons = []; for(let i=0; i<words.length; i+=7) lessons.push(words.slice(i, i+7));
     const lessonData = lessons[idx];
 
@@ -469,24 +489,20 @@ function openLessonPreview(idx) {
     `;
 }
 
-// --- FULL COURSE LOGIC (Core Feature) ---
+// --- FULL COURSE LOGIC ---
 
 function startLesson(idx) {
-    let words = [];
-    const bookId = state.user.currentBook;
-    if (bookId.includes('GEPT')) words = getBookWords(bookId);
-    else if (bookId === 'Custom_World') words = [...state.vocabulary];
-    else { const cb = state.customBooks.find(b => b.id === bookId); words = state.vocabulary.filter(w => cb.words.includes(w.word)); }
+    const words = getBookWords(state.user.currentBook);
     const lessons = []; for(let i=0; i<words.length; i+=7) lessons.push(words.slice(i, i+7));
 
     state.session.originalQueue = [...lessons[idx]];
     state.session.failedQueue = [];
     
-    // SRS Check: Before lesson, insert words due for review
+    // SRS Check
     const now = Date.now();
     state.session.reviewQueue = Object.keys(state.progress).filter(w => {
         const p = state.progress[w]; return p.status==='learned' && p.nextReview <= now;
-    }).map(w => state.vocabulary.find(v=>v.word===w)).filter(Boolean).slice(0, 5); // Limit 5
+    }).map(w => state.vocabulary.find(v=>v.word===w)).filter(Boolean).slice(0, 5); 
 
     // Start Flow
     if (state.session.reviewQueue.length > 0) {
@@ -523,11 +539,11 @@ function renderStudyScreen() {
         } else if (phase === 'spell') {
             state.session.currentPhase = 'rating';
         } else if (phase === 'rating') {
-            // Check for failures (Red Loop)
+            // Red Loop Check
             if (state.session.failedQueue.length > 0) {
                 alert(`有 ${state.session.failedQueue.length} 個單字需要加強！`);
                 state.session.currentModeQueue = [...state.session.failedQueue];
-                state.session.failedQueue = []; // Reset for next loop
+                state.session.failedQueue = []; // Reset
                 state.session.currentPhase = 'flashcard'; // Restart loop
             } else {
                 renderLessonComplete(content);
@@ -540,24 +556,20 @@ function renderStudyScreen() {
         return;
     }
 
-    // Render Logic
+    // Render Mode UI
     let html = '';
     const progress = `${state.session.currentIndex + 1} / ${queue.length}`;
-    const modeName = {
-        'srs_check': '複習', 'flashcard': '單字卡', 'sentence': '例句重組', 'match': '配對', 'spell': '聽寫', 'rating': '總複習'
-    }[state.session.currentPhase];
+    const modeName = { 'srs_check': '複習', 'flashcard': '單字卡', 'sentence': '例句重組', 'match': '配對', 'spell': '聽寫', 'rating': '總複習' }[state.session.currentPhase];
 
-    // 1. Flashcard (Front/Back)
+    // 1. Flashcard
     if (state.session.currentPhase === 'flashcard' || state.session.currentPhase === 'srs_check') {
         html = `
             <div class="h-full flex flex-col justify-center items-center p-6 w-full max-w-md mx-auto">
                 <div class="w-full aspect-[3/4] bg-white rounded-3xl shadow-xl border border-slate-100 flex flex-col items-center justify-center text-center p-8 relative overflow-hidden group">
-                    <!-- Front -->
                     <div class="absolute inset-0 bg-gradient-to-br from-indigo-500 to-purple-600 opacity-100 transition-opacity duration-500 group-[.flipped]:opacity-0 flex flex-col items-center justify-center p-4 pointer-events-none">
                         <h2 class="text-4xl font-bold text-white break-all drop-shadow-md">${w.word}</h2>
                         <p class="text-white/60 mt-8 text-sm font-bold tracking-widest animate-pulse">點擊翻面</p>
                     </div>
-                    <!-- Back -->
                     <div class="absolute inset-0 bg-white opacity-0 transition-opacity duration-500 group-[.flipped]:opacity-100 flex flex-col items-center justify-center p-6">
                         <span class="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-xs font-bold mb-6">${w.part_of_speech || 'Word'}</span>
                         <h3 class="text-3xl font-bold text-slate-800 mb-6 leading-tight">${w.definition_zh}</h3>
@@ -600,7 +612,7 @@ function renderStudyScreen() {
             </div>`;
         setTimeout(() => document.getElementById('spell-inp')?.focus(), 300);
     }
-    // 5. Rating (SRS)
+    // 5. Rating
     else if (state.session.currentPhase === 'rating') {
         html = `
             <div class="h-full flex flex-col justify-center items-center p-6 w-full max-w-md mx-auto text-center">
@@ -628,11 +640,7 @@ function renderStudyScreen() {
         </div>`;
 }
 
-function nextStep() {
-    state.session.currentIndex++;
-    renderStudyScreen();
-}
-
+function nextStep() { state.session.currentIndex++; renderStudyScreen(); }
 function rate(rating) {
     const w = state.session.currentModeQueue[state.session.currentIndex];
     updateWordProgress(w.word, rating);
@@ -643,27 +651,14 @@ function rate(rating) {
     }
     nextStep();
 }
-
 function checkMatch(selected, correct, btn) {
-    if (selected === correct) {
-        sounds.correct.play();
-        btn.classList.add('bg-green-50', 'border-green-500', 'text-green-600');
-        setTimeout(nextStep, 500);
-    } else {
-        sounds.wrong.play();
-        btn.classList.add('bg-red-50', 'border-red-500', 'text-red-600');
-    }
+    if (selected === correct) { sounds.correct.play(); btn.classList.add('bg-green-50', 'border-green-500', 'text-green-600'); setTimeout(nextStep, 500); } 
+    else { sounds.wrong.play(); btn.classList.add('bg-red-50', 'border-red-500', 'text-red-600'); }
 }
-
 function checkSpell(correct) {
     const val = document.getElementById('spell-inp').value.trim().toLowerCase();
-    if (val === correct.toLowerCase()) {
-        sounds.correct.play();
-        nextStep();
-    } else {
-        sounds.wrong.play();
-        document.getElementById('spell-inp').classList.add('border-red-500', 'text-red-500');
-    }
+    if (val === correct.toLowerCase()) { sounds.correct.play(); nextStep(); } 
+    else { sounds.wrong.play(); document.getElementById('spell-inp').classList.add('border-red-500', 'text-red-500'); }
 }
 
 // --- Sentence Builder ---
@@ -705,19 +700,12 @@ function checkSentence() {
 // ... (Helpers: saveState, logout, etc.) ...
 function saveState() {
     if(!state.user) return;
-    localStorage.setItem('wv_user_v11', JSON.stringify(state.user));
+    localStorage.setItem('wv_user_v12', JSON.stringify(state.user));
     fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'sync', nickname: state.user.nickname, customBooks: state.user.customBooks || [], currentBook: state.user.currentBook || '', totalLearned: Object.keys(state.progress).length, streak: state.user.streak, points: state.user.points, progress: state.progress }) }).catch(e=>{});
 }
-function logout() { localStorage.removeItem('wv_user_v11'); state.user=null; state.isLoggedIn=false; renderLogin(); }
+function logout() { localStorage.removeItem('wv_user_v12'); state.user=null; state.isLoggedIn=false; renderLogin(); }
 function updateWordProgress(w, r) { if(!state.progress[w]) state.progress[w]={status:'learned',level:0,nextReview:0}; const p=state.progress[w]; if(r==='red'){p.level=0;p.nextReview=Date.now()+86400000;}else if(r==='yellow'){p.level=Math.max(1,p.level);p.nextReview=Date.now()+172800000;}else{p.level++;p.nextReview=Date.now()+(Math.pow(2,p.level)*86400000);} saveState(); }
 function speak(t) { new Audio(`./audio/${t}.mp3`).play().catch(()=>{ const u=new SpeechSynthesisUtterance(t); u.lang='en-US'; u.rate=state.user.settings.speechRate||1.0; speechSynthesis.speak(u); }); }
-function getBookWords(id) {
-    if(id==='GEPT_Elem') return state.vocabulary.filter(w=>w.category&&w.category.includes('初級'));
-    if(id==='GEPT_Inter') return state.vocabulary.filter(w=>w.category&&w.category.includes('中級')&&!w.category.includes('高級'));
-    if(id==='GEPT_High') return state.vocabulary.filter(w=>w.category&&w.category.includes('中高級'));
-    return [];
-}
-function getBookName(id) { if(id==='GEPT_Elem')return '全民英檢初級'; if(id==='GEPT_Inter')return '全民英檢中級'; if(id==='GEPT_High')return '全民英檢中高級'; if(id==='Custom_World')return '單字環遊世界'; const c=state.customBooks.find(b=>b.id===id); return c?c.name:'Unknown'; }
 function checkAnnouncement() { if(state.remoteSettings.announcement !== "0") { document.getElementById('announcement-text').innerText = state.remoteSettings.announcement; document.getElementById('announcement-modal').classList.remove('hidden'); } }
 function closeAnnouncement() { document.getElementById('announcement-modal').classList.add('hidden'); }
 function renderLessonComplete(c) { sounds.complete.play(); c.innerHTML=`<div class="h-full flex flex-col items-center justify-center p-8 text-center animate-fade-in"><h1 class="text-3xl font-bold text-slate-800 mb-2">完成！</h1><div id="lottery-box" class="w-48 h-48 bg-white rounded-3xl shadow-lg border-4 border-indigo-50 flex items-center justify-center mb-8 text-6xl text-indigo-300"><i class="fas fa-gift"></i></div><button id="btn-lottery" onclick="playLottery()" class="btn-pill-primary bg-gradient-to-r from-pink-500 to-indigo-500 border-0">抽獎</button><button onclick="renderActiveTab()" class="mt-4 text-slate-400 font-bold">跳過</button></div>`; }
@@ -727,3 +715,5 @@ window.onload = initApp;
 </script>
 </body>
 </html>
+
+
